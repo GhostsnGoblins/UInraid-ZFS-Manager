@@ -9,6 +9,7 @@ trap 'rm -rf "$test_root"' EXIT
 
 mkdir -p "$test_root/bin"
 mock_log="$test_root/zfs-arguments.log"
+cron_log="$test_root/update-cron.log"
 policy_id="0123456789abcdef0123456789abcdef"
 
 cat > "$test_root/bin/zfs" <<'MOCK'
@@ -101,10 +102,24 @@ exit 0
 MOCK
 chmod 755 "$test_root/bin/flock"
 
+cat > "$test_root/bin/update_cron" <<'MOCK'
+#!/bin/bash
+printf 'called\n' >> "$MOCK_CRON_LOG"
+exit 0
+MOCK
+chmod 755 "$test_root/bin/update_cron"
+
 export PATH="$test_root/bin:$PATH"
 export MOCK_ZFS_LOG="$mock_log"
 export ZSM_LOG_FILE="$test_root/plugin.log"
 export ZSM_LOCK_FILE="$test_root/plugin.lock"
+export ZSM_CRON_LOCK_FILE="$test_root/plugin-cron.lock"
+export ZSM_UPDATE_CRON_BIN="$test_root/bin/update_cron"
+export MOCK_CRON_LOG="$cron_log"
+
+"$backend" refresh-cron
+[[ "$(cat "$cron_log")" == 'called' ]]
+grep -Fq 'action=cron-refresh result=success' "$test_root/plugin.log"
 
 dataset_output="$("$backend" list-datasets)"
 [[ "$dataset_output" == $'tank/data\tfilesystem\t4096\t8192\t1024\t/mnt/tank/data' ]]

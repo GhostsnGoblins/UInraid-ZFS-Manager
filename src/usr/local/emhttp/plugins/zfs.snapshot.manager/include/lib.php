@@ -7,8 +7,7 @@ const ZSM_CONFIG_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.
 const ZSM_POLICIES_FILE = '/boot/config/plugins/zfs.snapshot.manager/policies.json';
 const ZSM_CRON_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron';
 const ZSM_POLICY_RUNNER = '/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php';
-const ZSM_UPDATE_CRON = '/usr/local/sbin/update_cron';
-const ZSM_VERSION = '0.5.0';
+const ZSM_VERSION = '0.5.1';
 
 function zsm_is_enabled(): bool
 {
@@ -346,11 +345,7 @@ function zsm_apply_cron(): array
     if (!zsm_atomic_write(ZSM_CRON_FILE, implode(PHP_EOL, $lines) . PHP_EOL, 0644)) {
         return ['exitCode' => 1, 'stdout' => '', 'stderr' => 'Die Cron-Datei konnte nicht geschrieben werden.', 'timedOut' => false];
     }
-    if (!is_file(ZSM_UPDATE_CRON) || !is_executable(ZSM_UPDATE_CRON)) {
-        return ['exitCode' => 127, 'stdout' => '', 'stderr' => 'Unraid update_cron wurde nicht gefunden.', 'timedOut' => false];
-    }
-
-    return zsm_run_process([ZSM_UPDATE_CRON], 15, 'Unraid update_cron konnte nicht gestartet werden.');
+    return zsm_run(['refresh-cron'], 30);
 }
 
 /** @return list<array<string,string>> */

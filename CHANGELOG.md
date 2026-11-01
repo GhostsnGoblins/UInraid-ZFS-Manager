@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+- Unraid `update_cron` über das installierte Bash-Backend statt direkt aus PHP starten
+- bestehende automatische Regeln beim Update beibehalten und erneut aktivieren
+- Cron-Aktualisierung mit eigener Sperre und Protokollierung absichern
+
 ## 0.5.0
 
 - pro Dataset eine automatische Snapshot-Regel mit stabiler ID ergänzen

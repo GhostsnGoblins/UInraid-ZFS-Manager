@@ -6,6 +6,8 @@ export LC_ALL=C
 readonly PLUGIN_NAME="zfs.snapshot.manager"
 readonly LOG_FILE="${ZSM_LOG_FILE:-/var/log/${PLUGIN_NAME}.log}"
 readonly LOCK_FILE="${ZSM_LOCK_FILE:-/var/run/${PLUGIN_NAME}.lock}"
+readonly CRON_LOCK_FILE="${ZSM_CRON_LOCK_FILE:-/var/run/${PLUGIN_NAME}.cron.lock}"
+readonly UPDATE_CRON_BIN="${ZSM_UPDATE_CRON_BIN:-/usr/local/sbin/update_cron}"
 readonly SNAPSHOT_KIND_PROPERTY="org.unraidzfsmanager:kind"
 readonly SNAPSHOT_POLICY_PROPERTY="org.unraidzfsmanager:policy"
 
@@ -75,6 +77,19 @@ list_snapshots() {
   local zfs_bin="$1"
   "$zfs_bin" list -H -p -t snapshot \
     -o name,creation,used,referenced,clones,"$SNAPSHOT_KIND_PROPERTY" -s creation
+}
+
+refresh_cron() {
+  [[ -x "$UPDATE_CRON_BIN" ]] || fail "Unraid update_cron wurde nicht gefunden." 127
+  exec 8>"$CRON_LOCK_FILE"
+  flock -n 8 || fail "Eine andere Cron-Aktualisierung läuft bereits." 75
+
+  if "$UPDATE_CRON_BIN"; then
+    write_log "action=cron-refresh result=success"
+    return 0
+  fi
+  write_log "action=cron-refresh result=failed"
+  fail "Unraid update_cron ist fehlgeschlagen." 74
 }
 
 lock_snapshot_action() {
@@ -309,6 +324,13 @@ run_policy() {
 main() {
   local command="${1:-}"
   local zfs_bin
+
+  if [[ "$command" == "refresh-cron" ]]; then
+    [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager refresh-cron" 64
+    refresh_cron
+    return 0
+  fi
+
   zfs_bin="$(find_zfs)"
   case "$command" in
     list-datasets)

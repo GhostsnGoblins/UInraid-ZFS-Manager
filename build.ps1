@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.5.0',
+    [string]$Version = '0.5.1',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Fixes the Unraid update_cron invocation through the installed Bash backend
+- Preserves existing automatic rules and activates them during the update
 - Adds one automatic snapshot rule per selected dataset
 - Supports hourly, daily, and weekly schedules with selectable time
 - Supports age-based retention in hours, days, weeks, or months
@@ -154,6 +156,7 @@ rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log
 rm -f /var/run/zfs.snapshot.manager.lock
+rm -f /var/run/zfs.snapshot.manager.cron.lock
 rm -f /var/run/zfs.snapshot.manager.policies.lock
 if [[ -x /usr/local/sbin/update_cron ]]; then
   /usr/local/sbin/update_cron || true
