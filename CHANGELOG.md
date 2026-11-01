@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- kontrolliertes Löschen fremder Snapshots ergänzen
+- vollständigen Snapshot-Namen als zusätzliche Löschbestätigung verlangen
+- Snapshot-Namen konservativ validieren und Mehrfachziele ausschließen
+- bestehende Prüfungen auf Klone und ZFS-Holds für alle Löschpfade erzwingen
+- Löschprotokoll um den Modus `plugin` oder `external` ergänzen
+
 ## 0.3.0
 
 - sicheres Löschen manuell erstellter Plugin-Snapshots ergänzen

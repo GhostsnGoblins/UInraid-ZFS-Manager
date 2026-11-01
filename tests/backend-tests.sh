@@ -52,7 +52,7 @@ fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* && "$*" == *"-o name "* ]]; then
   case "$target" in
-    tank/data@uzm_manual_2025010[1-5]T000000Z)
+    tank/data@uzm_manual_2025010[1-5]T000000Z|media@auto-2026-10-10_00-00)
       printf '%s\n' "$target"
       exit 0
       ;;
@@ -128,7 +128,7 @@ set -e
 [[ $foreign_status -eq 77 ]]
 [[ "$foreign_output" == *"nicht eindeutig als manueller Plugin-Snapshot"* ]]
 ! grep -Fq 'destroy tank/data@uzm_manual_20250102T000000Z' "$mock_log"
-grep -Fq 'action=delete snapshot=tank/data@uzm_manual_20250102T000000Z result=blocked reason=not_plugin_owned' "$test_root/plugin.log"
+grep -Fq 'action=delete mode=plugin snapshot=tank/data@uzm_manual_20250102T000000Z result=blocked reason=not_plugin_owned' "$test_root/plugin.log"
 
 set +e
 clone_output="$("$backend" delete 'tank/data@uzm_manual_20250104T000000Z' 2>&1)"
@@ -149,7 +149,7 @@ set -e
 deleted_snapshot="$("$backend" delete 'tank/data@uzm_manual_20250101T000000Z')"
 [[ "$deleted_snapshot" == 'tank/data@uzm_manual_20250101T000000Z' ]]
 grep -Fq 'destroy tank/data@uzm_manual_20250101T000000Z' "$mock_log"
-grep -Fq 'action=delete snapshot=tank/data@uzm_manual_20250101T000000Z result=success' "$test_root/plugin.log"
+grep -Fq 'action=delete mode=plugin snapshot=tank/data@uzm_manual_20250101T000000Z result=success' "$test_root/plugin.log"
 
 set +e
 failed_delete_output="$("$backend" delete 'tank/data@uzm_manual_20250105T000000Z' 2>&1)"
@@ -157,6 +157,32 @@ failed_delete_status=$?
 set -e
 [[ $failed_delete_status -eq 74 ]]
 [[ "$failed_delete_output" == *"ZFS konnte den Snapshot nicht löschen"* ]]
-grep -Fq 'action=delete snapshot=tank/data@uzm_manual_20250105T000000Z result=failed reason=zfs_destroy_failed' "$test_root/plugin.log"
+grep -Fq 'action=delete mode=plugin snapshot=tank/data@uzm_manual_20250105T000000Z result=failed reason=zfs_destroy_failed' "$test_root/plugin.log"
+
+before_wrong_confirmation="$(wc -l < "$mock_log")"
+set +e
+wrong_confirmation_output="$("$backend" delete-external 'media@auto-2026-10-10_00-00' 'media@wrong' 2>&1)"
+wrong_confirmation_status=$?
+set -e
+[[ $wrong_confirmation_status -eq 64 ]]
+[[ "$wrong_confirmation_output" == *"stimmt nicht exakt überein"* ]]
+after_wrong_confirmation="$(wc -l < "$mock_log")"
+[[ "$before_wrong_confirmation" == "$after_wrong_confirmation" ]]
+
+before_invalid_external="$(wc -l < "$mock_log")"
+set +e
+invalid_external_output="$("$backend" delete-external 'media@auto%' 'media@auto%' 2>&1)"
+invalid_external_status=$?
+set -e
+[[ $invalid_external_status -eq 64 ]]
+[[ "$invalid_external_output" == *"Ungültiger Snapshot-Name"* ]]
+after_invalid_external="$(wc -l < "$mock_log")"
+[[ "$before_invalid_external" == "$after_invalid_external" ]]
+
+external_snapshot="media@auto-2026-10-10_00-00"
+deleted_external="$("$backend" delete-external "$external_snapshot" "$external_snapshot")"
+[[ "$deleted_external" == "$external_snapshot" ]]
+grep -Fq 'destroy media@auto-2026-10-10_00-00' "$mock_log"
+grep -Fq 'action=delete mode=external snapshot=media@auto-2026-10-10_00-00 result=success' "$test_root/plugin.log"
 
 printf 'Backend-Tests erfolgreich.\n'

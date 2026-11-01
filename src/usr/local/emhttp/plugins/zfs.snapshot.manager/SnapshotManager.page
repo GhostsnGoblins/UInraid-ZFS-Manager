@@ -76,7 +76,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 </div>
 
 <div class="zsm-notice">
-  Testversion <?=zsm_h(ZSM_VERSION)?>: Manuelle Plugin-Snapshots können erstellt und nach einer Sicherheitsprüfung wieder gelöscht werden. Rollback, Retention und Zeitpläne sind nicht enthalten.
+  Testversion <?=zsm_h(ZSM_VERSION)?>: Snapshots können erstellt und kontrolliert gelöscht werden. Fremde Snapshots erfordern die Eingabe ihres vollständigen Namens. Rollback, Retention und Zeitpläne sind nicht enthalten.
 </div>
 
 <?php if (!$arrayStarted && !$datasets): ?>
@@ -150,7 +150,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <section class="zsm-panel">
   <h2>Snapshots</h2>
-  <p>Gelöscht werden können nur eindeutig gekennzeichnete manuelle Snapshots dieses Plugins. Snapshots mit Klonen oder ZFS-Holds werden serverseitig abgelehnt.</p>
+  <p>Eigene Plugin-Snapshots verwenden eine einfache Sicherheitsabfrage. Bei fremden Snapshots muss der vollständige Name eingegeben werden. Snapshots mit Klonen oder ZFS-Holds werden immer serverseitig abgelehnt.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
       <thead><tr><th>Name</th><th>Erstellt</th><th>Belegt</th><th>Referenziert</th><th>Klone</th><th>Aktion</th></tr></thead>
@@ -173,12 +173,15 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
             <td><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
             <td><?=zsm_h($snapshot['clones'])?></td>
             <td>
-              <?php if (!$isPluginSnapshot): ?>
-                <span class="zsm-muted">Nicht vom Plugin</span>
-              <?php elseif ($hasClones): ?>
+              <?php if ($hasClones): ?>
                 <span class="zsm-muted">Klone vorhanden</span>
               <?php else: ?>
-                <button type="button" class="zsm-delete-button zsm-danger" data-snapshot="<?=zsm_h($snapshot['name'])?>">Löschen</button>
+                <button
+                  type="button"
+                  class="zsm-delete-button zsm-danger"
+                  data-snapshot="<?=zsm_h($snapshot['name'])?>"
+                  data-external="<?=$isPluginSnapshot ? '0' : '1'?>"
+                ><?=$isPluginSnapshot ? 'Löschen' : 'Extern löschen'?></button>
               <?php endif; ?>
             </td>
           </tr>
@@ -221,32 +224,55 @@ $(function () {
   $('.zsm-delete-button').on('click', function () {
     var button = $(this);
     var snapshot = String(button.data('snapshot') || '');
+    var external = String(button.data('external')) === '1';
+    var originalLabel = external ? 'Extern löschen' : 'Löschen';
     var message = $('#zsm-message');
-    var confirmation = 'Snapshot wirklich unwiderruflich löschen?\n\n' + snapshot + '\n\nDiese Aktion kann nicht rückgängig gemacht werden.';
+    var action = external ? 'delete-external' : 'delete';
+    var typedConfirmation = '';
+    message.hide().removeClass('zsm-error zsm-success');
 
-    if (!window.confirm(confirmation)) {
-      return;
+    if (external) {
+      typedConfirmation = window.prompt(
+        'Dieser Snapshot wurde nicht von diesem Plugin erstellt.\n\n' +
+        'Zum unwiderruflichen Löschen den vollständigen Namen eingeben:\n\n' + snapshot
+      );
+      if (typedConfirmation === null) {
+        return;
+      }
+      if (typedConfirmation !== snapshot) {
+        message.addClass('zsm-error').text('Der eingegebene Snapshot-Name stimmt nicht exakt überein.').show();
+        return;
+      }
+    } else {
+      var confirmation = 'Snapshot wirklich unwiderruflich löschen?\n\n' + snapshot + '\n\nDiese Aktion kann nicht rückgängig gemacht werden.';
+      if (!window.confirm(confirmation)) {
+        return;
+      }
     }
 
     button.prop('disabled', true).text('Wird gelöscht...');
-    message.hide().removeClass('zsm-error zsm-success');
+
+    var requestData = {
+      csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+      action: action,
+      snapshot: snapshot
+    };
+    if (external) {
+      requestData.confirmation = typedConfirmation;
+    }
 
     $.ajax({
       url: '/plugins/zfs.snapshot.manager/include/action.php',
       method: 'POST',
       dataType: 'json',
-      data: {
-        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
-        action: 'delete',
-        snapshot: snapshot
-      }
+      data: requestData
     }).done(function (response) {
       message.addClass('zsm-success').text(response.message + ' ' + response.snapshot).show();
       window.setTimeout(function () { window.location.reload(); }, 900);
     }).fail(function (xhr) {
       var response = xhr.responseJSON || {};
       message.addClass('zsm-error').text(response.message || 'Der Snapshot konnte nicht gelöscht werden.').show();
-      button.prop('disabled', false).text('Löschen');
+      button.prop('disabled', false).text(originalLabel);
     });
   });
 });

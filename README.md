@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.3.0
+## Funktionsumfang 0.4.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -10,6 +10,7 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - vorhandene ZFS-Snapshots auflisten
 - einen manuellen Snapshot für ein ausgewähltes Dataset erstellen
 - ausschließlich eindeutig gekennzeichnete manuelle Plugin-Snapshots löschen
+- fremde Snapshots nach Eingabe ihres vollständigen Namens löschen
 - Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
 - Unraid-Array-Zustand verständlich anzeigen
@@ -38,7 +39,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.3.0-noarch-1.txz`
+- `zfs.snapshot.manager-0.4.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -99,7 +100,8 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Ein exklusives Lock verhindert parallele Schreibaktionen durch das Plugin.
 - Die Oberfläche sendet den von Unraid bereitgestellten CSRF-Token mit.
 - Der Aktivierungszustand wird serverseitig geprüft. Ein ausgeblendeter Reiter allein gilt nicht als Schutz.
-- Löschen ist nur bei passendem Plugin-Namensschema und lokal gesetzter Plugin-Eigenschaft möglich.
+- Eigene Plugin-Snapshots werden über Namensschema und lokal gesetzte Plugin-Eigenschaft erkannt.
+- Fremde Snapshots erfordern die exakte Eingabe ihres vollständigen Namens in Oberfläche und Backend.
 - Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
 - Es existiert kein Rollback-, Clone-, Mount- oder Retention-Endpunkt.
 
