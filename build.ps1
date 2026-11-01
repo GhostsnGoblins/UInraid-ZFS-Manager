@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.2.4',
+    [string]$Version = '0.3.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -43,7 +43,7 @@ zfs.snapshot.manager: zfs.snapshot.manager
 zfs.snapshot.manager:
 zfs.snapshot.manager: Native Unraid WebGUI for listing ZFS datasets and snapshots.
 zfs.snapshot.manager: Provides a top-level Snapshots tab and an enable setting.
-zfs.snapshot.manager: This test version contains no destructive ZFS action.
+zfs.snapshot.manager: Deletes only verified manual snapshots created by this plugin.
 zfs.snapshot.manager:
 zfs.snapshot.manager: Project: Unraid ZFS Snapshot Manager
 zfs.snapshot.manager:
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds guarded deletion for manual snapshots created by this plugin
+- Blocks deletion when clones or ZFS holds exist
 - Declares update metadata as canonical PLG entities
 - Uses GitHub as the public Unraid update channel
 - Uses the native Unraid settings form layout

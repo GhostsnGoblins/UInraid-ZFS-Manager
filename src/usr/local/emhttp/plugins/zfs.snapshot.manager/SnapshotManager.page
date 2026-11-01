@@ -22,7 +22,7 @@ $datasets = $datasetResult['exitCode'] === 0
     ? zsm_parse_tsv($datasetResult['stdout'], ['name', 'type', 'used', 'available', 'referenced', 'mountpoint'])
     : [];
 $snapshots = $snapshotResult['exitCode'] === 0
-    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones'])
+    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind'])
     : [];
 
 $errors = [];
@@ -66,6 +66,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-toolbar p { margin:0; }
 .zsm-state-good { color:#2e7d32; }
 .zsm-state-warn { color:#b26a00; }
+.zsm-danger { background:#b71c1c; color:#fff; border-color:#b71c1c; }
+.zsm-danger:hover { background:#8e0000; border-color:#8e0000; }
 </style>
 
 <div class="zsm-toolbar">
@@ -74,7 +76,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 </div>
 
 <div class="zsm-notice">
-  Testversion <?=zsm_h(ZSM_VERSION)?>: Diese Seite kann Snapshots anzeigen und neue manuelle Snapshots erstellen. Löschen, Rollback, Retention und Zeitpläne sind nicht enthalten.
+  Testversion <?=zsm_h(ZSM_VERSION)?>: Manuelle Plugin-Snapshots können erstellt und nach einer Sicherheitsprüfung wieder gelöscht werden. Rollback, Retention und Zeitpläne sind nicht enthalten.
 </div>
 
 <?php if (!$arrayStarted && !$datasets): ?>
@@ -96,7 +98,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
   <div class="zsm-card"><span>Datasets und ZVOLs</span><strong><?=count($datasets)?></strong></div>
   <div class="zsm-card"><span>Snapshots</span><strong><?=count($snapshots)?></strong></div>
-  <div class="zsm-card"><span>Schreibfunktionen</span><strong>1</strong><span class="zsm-muted">Nur Snapshot erstellen</span></div>
+  <div class="zsm-card"><span>Schreibfunktionen</span><strong>2</strong><span class="zsm-muted">Erstellen und sicheres Löschen</span></div>
 </div>
 
 <section class="zsm-panel">
@@ -148,22 +150,37 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <section class="zsm-panel">
   <h2>Snapshots</h2>
+  <p>Gelöscht werden können nur eindeutig gekennzeichnete manuelle Snapshots dieses Plugins. Snapshots mit Klonen oder ZFS-Holds werden serverseitig abgelehnt.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th>Name</th><th>Erstellt</th><th>Belegt</th><th>Referenziert</th><th>Klone</th></tr></thead>
+      <thead><tr><th>Name</th><th>Erstellt</th><th>Belegt</th><th>Referenziert</th><th>Klone</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$snapshots && !$arrayStarted): ?>
-        <tr><td colspan="5">Das Array ist noch nicht gestartet.</td></tr>
+        <tr><td colspan="6">Das Array ist noch nicht gestartet.</td></tr>
       <?php elseif (!$snapshots): ?>
-        <tr><td colspan="5">Keine Snapshots gefunden.</td></tr>
+        <tr><td colspan="6">Keine Snapshots gefunden.</td></tr>
       <?php else: ?>
         <?php foreach (array_reverse($snapshots) as $snapshot): ?>
+          <?php
+          $isPluginSnapshot = $snapshot['kind'] === 'manual'
+              && preg_match('/@uzm_manual_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1;
+          $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
+          ?>
           <tr>
             <td><?=zsm_h($snapshot['name'])?></td>
             <td><?=zsm_h(zsm_format_timestamp($snapshot['creation']))?></td>
             <td><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
             <td><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
             <td><?=zsm_h($snapshot['clones'])?></td>
+            <td>
+              <?php if (!$isPluginSnapshot): ?>
+                <span class="zsm-muted">Nicht vom Plugin</span>
+              <?php elseif ($hasClones): ?>
+                <span class="zsm-muted">Klone vorhanden</span>
+              <?php else: ?>
+                <button type="button" class="zsm-delete-button zsm-danger" data-snapshot="<?=zsm_h($snapshot['name'])?>">Löschen</button>
+              <?php endif; ?>
+            </td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -198,6 +215,38 @@ $(function () {
       var response = xhr.responseJSON || {};
       message.addClass('zsm-error').text(response.message || 'Der Snapshot konnte nicht erstellt werden.').show();
       button.prop('disabled', false).text('Snapshot erstellen');
+    });
+  });
+
+  $('.zsm-delete-button').on('click', function () {
+    var button = $(this);
+    var snapshot = String(button.data('snapshot') || '');
+    var message = $('#zsm-message');
+    var confirmation = 'Snapshot wirklich unwiderruflich löschen?\n\n' + snapshot + '\n\nDiese Aktion kann nicht rückgängig gemacht werden.';
+
+    if (!window.confirm(confirmation)) {
+      return;
+    }
+
+    button.prop('disabled', true).text('Wird gelöscht...');
+    message.hide().removeClass('zsm-error zsm-success');
+
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/action.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: 'delete',
+        snapshot: snapshot
+      }
+    }).done(function (response) {
+      message.addClass('zsm-success').text(response.message + ' ' + response.snapshot).show();
+      window.setTimeout(function () { window.location.reload(); }, 900);
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      message.addClass('zsm-error').text(response.message || 'Der Snapshot konnte nicht gelöscht werden.').show();
+      button.prop('disabled', false).text('Löschen');
     });
   });
 });

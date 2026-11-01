@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const ZSM_BACKEND = '/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager';
 const ZSM_CONFIG_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg';
-const ZSM_VERSION = '0.2.4';
+const ZSM_VERSION = '0.3.0';
 
 function zsm_is_enabled(): bool
 {

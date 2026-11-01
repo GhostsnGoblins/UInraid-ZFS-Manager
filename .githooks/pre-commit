@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly EXPECTED_NAME="GhostsnGoblins"
+readonly EXPECTED_EMAIL="61009679+GhostsnGoblins@users.noreply.github.com"
+
+configured_name="$(git config --get user.name || true)"
+configured_email="$(git config --get user.email || true)"
+
+if [[ "$configured_name" != "$EXPECTED_NAME" || "$configured_email" != "$EXPECTED_EMAIL" ]]; then
+  printf 'Commit blockiert: Für dieses öffentliche Repository ist ausschließlich die GitHub-Noreply-Identität erlaubt.\n' >&2
+  printf 'Erwartet: %s <%s>\n' "$EXPECTED_NAME" "$EXPECTED_EMAIL" >&2
+  exit 1
+fi

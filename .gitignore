@@ -35,10 +35,23 @@ TestResults/
 .env
 .env.*
 !.env.example
+.envrc
+.netrc
+.npmrc
+.pypirc
+.credentials/
+secrets/
 *.key
 *.pem
 *.p12
 *.pfx
+*.ppk
+*.jks
+*.keystore
+*.kdbx
+*.ovpn
+id_rsa
+id_ed25519
 
 # Release-Artefakte unter dist/ werden absichtlich versioniert.
 

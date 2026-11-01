@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- sicheres Löschen manuell erstellter Plugin-Snapshots ergänzen
+- serverseitig Name und lokale Plugin-Eigenschaft erneut validieren
+- Löschung bei vorhandenen Klonen oder ZFS-Holds blockieren
+- ausschließlich nicht-rekursives `zfs destroy` ohne Force-Option verwenden
+- erfolgreiche, fehlgeschlagene und blockierte Löschversuche protokollieren
+
 ## 0.2.4
 
 - `pluginURL`, Paket-URL und SHA-256 als kanonische PLG-Entities deklarieren

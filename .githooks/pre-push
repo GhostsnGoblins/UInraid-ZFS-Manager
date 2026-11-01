@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly EXPECTED_EMAIL="61009679+GhostsnGoblins@users.noreply.github.com"
+readonly ZERO_OID="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [[ "$local_oid" != "$ZERO_OID" ]] || continue
+
+  while IFS=$'\t' read -r commit author_email committer_email; do
+    if [[ "$author_email" != "$EXPECTED_EMAIL" || "$committer_email" != "$EXPECTED_EMAIL" ]]; then
+      printf 'Push blockiert: Commit %s verwendet keine freigegebene GitHub-Noreply-Adresse.\n' "$commit" >&2
+      exit 1
+    fi
+  done < <(git log --format='%H%x09%ae%x09%ce' "$local_oid")
+done

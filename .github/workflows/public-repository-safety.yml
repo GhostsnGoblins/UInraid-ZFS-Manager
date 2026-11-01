@@ -1,0 +1,34 @@
+name: Public repository safety
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-commit-identities:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject public email addresses in commit metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly expected_email='61009679+GhostsnGoblins@users.noreply.github.com'
+          failed=0
+
+          while IFS=$'\t' read -r commit author_email committer_email; do
+            if [[ "$author_email" != "$expected_email" || "$committer_email" != "$expected_email" ]]; then
+              printf '::error::Commit %s verwendet keine freigegebene GitHub-Noreply-Adresse.\n' "$commit"
+              failed=1
+            fi
+          done < <(git log --all --format='%H%x09%ae%x09%ce')
+
+          exit "$failed"

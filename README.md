@@ -2,18 +2,20 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.2.4
+## Funktionsumfang 0.3.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
 - ZFS-Dateisysteme und ZVOLs auflisten
 - vorhandene ZFS-Snapshots auflisten
 - einen manuellen Snapshot für ein ausgewähltes Dataset erstellen
+- ausschließlich eindeutig gekennzeichnete manuelle Plugin-Snapshots löschen
+- Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
 - Unraid-Array-Zustand verständlich anzeigen
 - Daten nach dem Array-Start manuell aktualisieren
 
-Diese Version löscht keine Snapshots, richtet keine Zeitpläne ein und verändert keine Samba-, Docker- oder VM-Konfiguration.
+Diese Version richtet keine Zeitpläne ein und verändert keine Samba-, Docker- oder VM-Konfiguration. Das Löschen verwendet keine rekursiven oder erzwungenen ZFS-Optionen.
 
 Beim Ausschalten verschwindet der Hauptreiter nach dem Neuladen der WebGUI. Das Backend verweigert dann neue Snapshot-Aktionen. Bereits vorhandene ZFS-Snapshots werden weder gelöscht noch verändert.
 
@@ -36,7 +38,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.2.4-noarch-1.txz`
+- `zfs.snapshot.manager-0.3.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -58,11 +60,21 @@ Das Manifest lädt das zur Version passende TXZ-Paket automatisch von GitHub und
 
 ### Einmalige Migration von einer lokalen Testinstallation
 
-Die alten lokalen Testmanifeste besitzen noch keine kanonisch deklarierte Update-URL. Entferne deshalb einmalig die alte Testinstallation unter `Plugins` und installiere anschließend Version 0.2.4 über die oben genannte GitHub-URL. Bereits vorhandene ZFS-Snapshots werden bei der Deinstallation nicht verändert.
+Die alten lokalen Testmanifeste besitzen noch keine kanonisch deklarierte Update-URL. Entferne deshalb einmalig die alte Testinstallation unter `Plugins` und installiere anschließend die aktuelle Version über die oben genannte GitHub-URL. Bereits vorhandene ZFS-Snapshots werden bei der Deinstallation nicht verändert.
 
 ## Updates
 
 Nach der Installation über GitHub werden neue Versionen unter `Plugins > Check for Updates` erkannt und über die normale Unraid-GUI installiert. Manuelle `upgradepkg`-Befehle sind dann nicht mehr erforderlich.
+
+## Schutz der öffentlichen Git-Historie
+
+Dieses Repository erlaubt ausschließlich die GitHub-Noreply-Adresse `61009679+GhostsnGoblins@users.noreply.github.com` in Autor- und Committer-Metadaten. Nach einem neuen Clone wird der versionierte Schutz einmalig aktiviert:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Der Pre-Commit-Hook prüft die lokale Identität. Der Pre-Push-Hook kontrolliert zusätzlich die vollständige Historie jedes zu veröffentlichenden Branches. GitHub Actions wiederholt die Prüfung nach jedem Push und bei Pull Requests.
 
 ## Deinstallation
 
@@ -84,10 +96,12 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Dataset-Namen werden gegen eine konservative Positivliste geprüft.
 - Snapshot-Namen werden ausschließlich vom Backend erzeugt.
 - PHP startet das Backend ohne Shell-Interpolation.
-- Ein exklusives Lock verhindert parallele Snapshot-Erstellungen durch das Plugin.
+- Ein exklusives Lock verhindert parallele Schreibaktionen durch das Plugin.
 - Die Oberfläche sendet den von Unraid bereitgestellten CSRF-Token mit.
 - Der Aktivierungszustand wird serverseitig geprüft. Ein ausgeblendeter Reiter allein gilt nicht als Schutz.
-- Es existiert kein Lösch-, Rollback-, Clone-, Mount- oder Retention-Endpunkt.
+- Löschen ist nur bei passendem Plugin-Namensschema und lokal gesetzter Plugin-Eigenschaft möglich.
+- Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
+- Es existiert kein Rollback-, Clone-, Mount- oder Retention-Endpunkt.
 
 ## Noch offen
 

@@ -26,6 +26,17 @@ is_valid_dataset() {
   [[ "$dataset" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*(/[A-Za-z0-9][A-Za-z0-9_.:-]*)*$ ]]
 }
 
+is_plugin_snapshot() {
+  local snapshot="$1"
+  local dataset snapshot_name
+
+  [[ ${#snapshot} -le 320 && "$snapshot" == *@* ]] || return 1
+  dataset="${snapshot%@*}"
+  snapshot_name="${snapshot##*@}"
+  is_valid_dataset "$dataset" || return 1
+  [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]
+}
+
 write_log() {
   local message="$1"
   local timestamp
@@ -47,7 +58,7 @@ list_datasets() {
 list_snapshots() {
   local zfs_bin="$1"
   "$zfs_bin" list -H -p -t snapshot \
-    -o name,creation,used,referenced,clones -s creation
+    -o name,creation,used,referenced,clones,"$SNAPSHOT_PROPERTY" -s creation
 }
 
 create_snapshot() {
@@ -80,6 +91,57 @@ create_snapshot() {
   fail "ZFS konnte den Snapshot nicht erstellen." 74
 }
 
+delete_snapshot() {
+  local zfs_bin="$1"
+  local snapshot="$2"
+  local existing ownership clones holds
+
+  is_plugin_snapshot "$snapshot" \
+    || fail "Nur eindeutig benannte Plugin-Snapshots dürfen gelöscht werden." 64
+
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
+
+  if ! existing="$("$zfs_bin" list -H -t snapshot -o name "$snapshot" 2>/dev/null)" \
+      || [[ "$existing" != "$snapshot" ]]; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=not_found"
+    fail "Der Snapshot existiert nicht oder ist nicht zugänglich." 66
+  fi
+
+  if ! ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_PROPERTY" "$snapshot" 2>/dev/null)" \
+      || [[ "$ownership" != $'manual\tlocal' ]]; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=not_plugin_owned"
+    fail "Der Snapshot wurde nicht eindeutig als manueller Plugin-Snapshot erkannt." 77
+  fi
+
+  if ! clones="$("$zfs_bin" get -H -o value clones "$snapshot" 2>/dev/null)"; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=clone_check_failed"
+    fail "Abhängige Klone konnten nicht sicher geprüft werden." 78
+  fi
+  if [[ -n "$clones" && "$clones" != "-" ]]; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=clones_present"
+    fail "Der Snapshot besitzt abhängige Klone und wurde nicht gelöscht." 78
+  fi
+
+  if ! holds="$("$zfs_bin" holds -H "$snapshot" 2>/dev/null)"; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=hold_check_failed"
+    fail "ZFS-Holds konnten nicht sicher geprüft werden." 79
+  fi
+  if [[ -n "$holds" ]]; then
+    write_log "action=delete snapshot=${snapshot} result=blocked reason=holds_present"
+    fail "Der Snapshot besitzt ZFS-Holds und wurde nicht gelöscht." 79
+  fi
+
+  if "$zfs_bin" destroy "$snapshot"; then
+    write_log "action=delete snapshot=${snapshot} result=success"
+    printf '%s\n' "$snapshot"
+    return 0
+  fi
+
+  write_log "action=delete snapshot=${snapshot} result=failed reason=zfs_destroy_failed"
+  fail "ZFS konnte den Snapshot nicht löschen." 74
+}
+
 main() {
   local command="${1:-}"
   local zfs_bin
@@ -98,8 +160,12 @@ main() {
       [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager create DATASET" 64
       create_snapshot "$zfs_bin" "$2"
       ;;
+    delete)
+      [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager delete SNAPSHOT" 64
+      delete_snapshot "$zfs_bin" "$2"
+      ;;
     *)
-      fail "Unbekannter Befehl. Erlaubt: list-datasets, list-snapshots, create." 64
+      fail "Unbekannter Befehl. Erlaubt: list-datasets, list-snapshots, create, delete." 64
       ;;
   esac
 }
