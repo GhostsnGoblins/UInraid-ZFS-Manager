@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.3-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.4-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -26,8 +26,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0\.2\.3';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.3.'
+if ($library -notmatch "const ZSM_VERSION = '0\.2\.4';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.4.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -38,7 +38,7 @@ if ($backend -notmatch 'flock -n') {
     throw 'Backend enthält keine exklusive Schreibsperre.'
 }
 if ($backend -match 'zfs destroy|zfs rollback|zfs clone') {
-    throw 'Backend enthält eine für Version 0.2.3 unerlaubte destruktive Aktion.'
+    throw 'Backend enthält eine für Version 0.2.4 unerlaubte destruktive Aktion.'
 }
 if ($backend -notmatch 'org\.unraidzfsmanager:kind') {
     throw 'Backend kennzeichnet erstellte Snapshots nicht.'
@@ -92,9 +92,16 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.3-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.4-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
+}
+$manifestText = Get-Content -Raw -LiteralPath $manifestPath
+if ($manifestText -notmatch '<!ENTITY pluginURL "https://raw\.githubusercontent\.com/' -or
+    $manifestText -notmatch 'pluginURL="&pluginURL;"' -or
+    $manifestText -notmatch '<URL>&packageURL;</URL>' -or
+    $manifestText -notmatch '<SHA256>&packageSHA256;</SHA256>') {
+    throw 'Manifest deklariert die Update-Metadaten nicht als kanonische PLG-Entities.'
 }
 if ($topPage -notmatch 'zfs\.snapshot\.manager\.cfg') {
     throw 'Der Hauptreiter berücksichtigt die Aktivierungseinstellung nicht.'

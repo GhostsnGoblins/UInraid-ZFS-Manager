@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.2.3',
+    [string]$Version = '0.2.4',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -73,11 +73,15 @@ $manifest = @"
 <!ENTITY name "$pluginName">
 <!ENTITY author "Claudio">
 <!ENTITY version "$Version">
+<!ENTITY pluginURL "$manifestUrl">
+<!ENTITY packageURL "$packageUrl">
+<!ENTITY packageSHA256 "$sha256">
 ]>
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="$manifestUrl" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
+<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
 ### $Version
 
+- Declares update metadata as canonical PLG entities
 - Uses GitHub as the public Unraid update channel
 - Uses the native Unraid settings form layout
 - Adds a top-level Snapshots tab beside Docker and VMs
@@ -87,8 +91,8 @@ $manifest = @"
 ]]></CHANGES>
 
 <FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/$packageName">
-<URL>$packageUrl</URL>
-<SHA256>$sha256</SHA256>
+<URL>&packageURL;</URL>
+<SHA256>&packageSHA256;</SHA256>
 </FILE>
 
 <FILE Run="/bin/bash">

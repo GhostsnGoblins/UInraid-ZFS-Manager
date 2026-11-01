@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+
+- `pluginURL`, Paket-URL und SHA-256 als kanonische PLG-Entities deklarieren
+- Kompatibilität mit der Unraid-Updateprüfung herstellen
+
 ## 0.2.3
 
 - Einstellungsseite auf das native Unraid-Formularraster umstellen
