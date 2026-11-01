@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.6.0',
+    [string]$Version = '0.6.1',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Prevents scheduled snapshots from failing when the 15-minute cleanup starts at the same time
+- Lets scheduled snapshot runs wait up to 60 seconds for the shared ZFS action lock
 - Adds optional recursive snapshots for a dataset and all child datasets
 - Shows every affected dataset before a recursive rule is saved
 - Rejects overlapping recursive and child-dataset rules

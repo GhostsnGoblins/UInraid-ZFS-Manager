@@ -7,7 +7,7 @@ const ZSM_CONFIG_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.
 const ZSM_POLICIES_FILE = '/boot/config/plugins/zfs.snapshot.manager/policies.json';
 const ZSM_CRON_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron';
 const ZSM_POLICY_RUNNER = '/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php';
-const ZSM_VERSION = '0.6.0';
+const ZSM_VERSION = '0.6.1';
 
 function zsm_is_enabled(): bool
 {

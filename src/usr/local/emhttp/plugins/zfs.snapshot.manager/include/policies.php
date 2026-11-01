@@ -153,7 +153,7 @@ $result = zsm_run([
     $policy['dataset'],
     $retentionSeconds,
     $policy['recursive'] ? '1' : '0',
-], 120);
+], 180);
 if ($result['exitCode'] !== 0) {
     policy_respond(409, ['ok' => false, 'message' => $result['stderr'] ?: 'Der Zeitplan konnte nicht ausgeführt werden.']);
 }

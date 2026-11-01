@@ -97,8 +97,14 @@ refresh_cron() {
 }
 
 lock_snapshot_action() {
+  local wait_seconds="${1:-0}"
   exec 9>"$LOCK_FILE"
-  flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
+  if [[ "$wait_seconds" == "0" ]]; then
+    flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
+    return 0
+  fi
+  flock -w "$wait_seconds" 9 \
+    || fail "Eine andere Snapshot-Aktion läuft länger als ${wait_seconds} Sekunden." 75
 }
 
 require_dataset_exists() {
@@ -324,7 +330,7 @@ run_policy() {
   is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
   is_valid_retention_seconds "$retention_seconds" || fail "Ungültige Aufbewahrungsdauer." 64
   is_valid_recursive "$recursive" || fail "Ungültige Rekursiv-Einstellung." 64
-  lock_snapshot_action
+  lock_snapshot_action 60
   require_dataset_exists "$zfs_bin" "$dataset"
   timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
   snapshot="${dataset}@uzm_auto_${policy_id}_${timestamp}"

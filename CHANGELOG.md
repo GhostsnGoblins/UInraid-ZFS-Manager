@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- geplante Snapshot-Läufe bei gleichzeitiger 15-Minuten-Bereinigung nicht mehr sofort abbrechen
+- geplante Läufe bis zu 60 Sekunden kontrolliert auf die gemeinsame ZFS-Aktionssperre warten lassen
+- Zeitlimit des geplanten Runners passend zur Wartezeit auf 180 Sekunden erhöhen
+
 ## 0.6.0
 
 - Unter-Datasets optional rekursiv in eine automatische Regel einbeziehen

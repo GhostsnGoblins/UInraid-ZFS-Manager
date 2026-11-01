@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.6.0
+## Funktionsumfang 0.6.1
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -33,7 +33,7 @@ Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie 
 
 ## Windows-Vorgängerversionen
 
-Die erstellten ZFS-Snapshots werden noch nicht als Windows-Vorgängerversionen veröffentlicht. Dafür muss eine SMB-Freigabe über Sambas `shadow_copy2` eindeutig einem ZFS-Dataset und dessen `.zfs/snapshot`-Verzeichnis zugeordnet werden. Unraid-User-Shares unter `/mnt/user` können Daten mehrerer Datenträger zusammenführen und dürfen deshalb nicht automatisch wie ein einzelnes Dataset behandelt werden. Version 0.6.0 verändert keine Samba-Konfiguration. Siehe die [offizielle Samba-Dokumentation zu `vfs_shadow_copy2`](https://www.samba.org/samba/samba/docs/man/manpages/vfs_shadow_copy2.8.html).
+Die erstellten ZFS-Snapshots werden noch nicht als Windows-Vorgängerversionen veröffentlicht. Dafür muss eine SMB-Freigabe über Sambas `shadow_copy2` eindeutig einem ZFS-Dataset und dessen `.zfs/snapshot`-Verzeichnis zugeordnet werden. Unraid-User-Shares unter `/mnt/user` können Daten mehrerer Datenträger zusammenführen und dürfen deshalb nicht automatisch wie ein einzelnes Dataset behandelt werden. Version 0.6.1 verändert keine Samba-Konfiguration. Siehe die [offizielle Samba-Dokumentation zu `vfs_shadow_copy2`](https://www.samba.org/samba/samba/docs/man/manpages/vfs_shadow_copy2.8.html).
 
 ## Voraussetzungen
 
@@ -52,7 +52,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.6.0-noarch-1.txz`
+- `zfs.snapshot.manager-0.6.1-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren

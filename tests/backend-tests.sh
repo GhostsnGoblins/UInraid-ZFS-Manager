@@ -10,6 +10,7 @@ trap 'rm -rf "$test_root"' EXIT
 mkdir -p "$test_root/bin"
 mock_log="$test_root/zfs-arguments.log"
 cron_log="$test_root/update-cron.log"
+flock_log="$test_root/flock.log"
 policy_id="0123456789abcdef0123456789abcdef"
 
 cat > "$test_root/bin/zfs" <<'MOCK'
@@ -106,6 +107,7 @@ chmod 755 "$test_root/bin/zfs"
 
 cat > "$test_root/bin/flock" <<'MOCK'
 #!/bin/bash
+printf '%s\n' "$*" >> "$MOCK_FLOCK_LOG"
 exit 0
 MOCK
 chmod 755 "$test_root/bin/flock"
@@ -124,6 +126,7 @@ export ZSM_LOCK_FILE="$test_root/plugin.lock"
 export ZSM_CRON_LOCK_FILE="$test_root/plugin-cron.lock"
 export ZSM_UPDATE_CRON_BIN="$test_root/bin/update_cron"
 export MOCK_CRON_LOG="$cron_log"
+export MOCK_FLOCK_LOG="$flock_log"
 
 "$backend" refresh-cron
 [[ "$(cat "$cron_log")" == 'called' ]]
@@ -147,6 +150,7 @@ after_invalid="$(wc -l < "$mock_log")"
 
 created_snapshot="$("$backend" create 'tank/data')"
 [[ "$created_snapshot" =~ ^tank/data@uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]
+grep -Fxq -- '-n 9' "$flock_log"
 grep -Fq 'snapshot -o org.unraidzfsmanager:kind=manual tank/data@uzm_manual_' "$mock_log"
 grep -Fq 'action=create dataset=tank/data snapshot=tank/data@uzm_manual_' "$test_root/plugin.log"
 
@@ -231,6 +235,7 @@ preview_output="$("$backend" preview-policy "$policy_id" 'tank/data' '3600')"
 policy_output="$("$backend" run-policy "$policy_id" 'tank/data' '3600' '0')"
 policy_snapshot="$(printf '%s\n' "$policy_output" | head -n 1)"
 [[ "$policy_snapshot" =~ ^tank/data@uzm_auto_0123456789abcdef0123456789abcdef_[0-9]{8}T[0-9]{6}Z$ ]]
+grep -Fxq -- '-w 60 9' "$flock_log"
 grep -Fq 'snapshot -o org.unraidzfsmanager:kind=automatic -o org.unraidzfsmanager:policy=0123456789abcdef0123456789abcdef tank/data@uzm_auto_' "$mock_log"
 grep -Fq 'destroy tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' "$mock_log"
 ! grep -Fq 'destroy tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z' "$mock_log"
