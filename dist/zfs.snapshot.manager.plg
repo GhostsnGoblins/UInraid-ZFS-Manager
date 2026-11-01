@@ -2,30 +2,30 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "zfs.snapshot.manager">
 <!ENTITY author "Claudio">
-<!ENTITY version "0.2.1">
+<!ENTITY version "0.2.2">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### 0.2.1
+### 0.2.2
 
-- Adds the Gitea-backed Unraid update channel
+- Uses GitHub as the public Unraid update channel
 - Adds a top-level Snapshots tab beside Docker and VMs
 - Keeps only the enable/disable switch under Settings
 - Blocks write actions while the plugin is disabled
 - Preserves all existing snapshots when disabled
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.1-noarch-1.txz">
-<URL>https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.2.1-noarch-1.txz</URL>
-<SHA256>2aeb63a3efa89f6e06858d5c46902eca1c5c1ba0bb0f41fb226417b92fae7c85</SHA256>
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.2-noarch-1.txz">
+<URL>https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.2.2-noarch-1.txz</URL>
+<SHA256>804573ffdaf2ec2c133b6621361784a14f7328c7f14ff252b69a20a7d937ab6e</SHA256>
 </FILE>
 
 <FILE Run="/bin/bash">
 <INLINE><![CDATA[
 set -euo pipefail
 
-PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.1-noarch-1.txz"
-EXPECTED_SHA256="2aeb63a3efa89f6e06858d5c46902eca1c5c1ba0bb0f41fb226417b92fae7c85"
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.2-noarch-1.txz"
+EXPECTED_SHA256="804573ffdaf2ec2c133b6621361784a14f7328c7f14ff252b69a20a7d937ab6e"
 
 if [[ ! -f "$PACKAGE" ]]; then
   echo "Missing local test package: $PACKAGE"
@@ -39,7 +39,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 /sbin/upgradepkg --install-new --reinstall "$PACKAGE"
-find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.2.1-noarch-1.txz' -delete
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.2.2-noarch-1.txz' -delete
 
 CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -52,7 +52,7 @@ find /usr/local/emhttp/plugins/zfs.snapshot.manager -type d -exec chmod 755 {} \
 find /usr/local/emhttp/plugins/zfs.snapshot.manager -type f -exec chmod 644 {} \;
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager
 
-echo "ZFS Snapshot Manager 0.2.1 installed."
+echo "ZFS Snapshot Manager 0.2.2 installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>
@@ -60,7 +60,7 @@ echo "Manage snapshots from the top-level Snapshots tab."
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
-removepkg zfs.snapshot.manager-0.2.1-noarch-1 2>/dev/null || true
+removepkg zfs.snapshot.manager-0.2.2-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log

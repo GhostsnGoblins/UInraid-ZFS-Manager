@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.1-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.2-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -26,8 +26,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0\.2\.1';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.1.'
+if ($library -notmatch "const ZSM_VERSION = '0\.2\.2';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.2.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -38,7 +38,7 @@ if ($backend -notmatch 'flock -n') {
     throw 'Backend enthält keine exklusive Schreibsperre.'
 }
 if ($backend -match 'zfs destroy|zfs rollback|zfs clone') {
-    throw 'Backend enthält eine für Version 0.2.1 unerlaubte destruktive Aktion.'
+    throw 'Backend enthält eine für Version 0.2.2 unerlaubte destruktive Aktion.'
 }
 if ($backend -notmatch 'org\.unraidzfsmanager:kind') {
     throw 'Backend kennzeichnet erstellte Snapshots nicht.'
@@ -84,9 +84,9 @@ if ($topPage -notmatch '^Menu="Tasks:65"' -or $topPage -notmatch 'Type="xmenu"')
 
 $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg'
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
-    throw 'Manifest enthält nicht den erwarteten Gitea-Updatekanal.'
+    throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.1-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.2-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }

@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.2.1
+## Funktionsumfang 0.2.2
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -36,7 +36,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.2.1-noarch-1.txz`
+- `zfs.snapshot.manager-0.2.2-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -54,15 +54,15 @@ https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/z
 4. Öffne `Settings > User Utilities > ZFS Snapshot Manager` und aktiviere das Plugin.
 5. Verwalte die Snapshots über den Hauptreiter `Snapshots`.
 
-Das Manifest lädt das zur Version passende TXZ-Paket automatisch von Gitea und verifiziert dessen SHA-256-Prüfsumme.
+Das Manifest lädt das zur Version passende TXZ-Paket automatisch von GitHub und verifiziert dessen SHA-256-Prüfsumme.
 
 ### Einmalige Migration von einer lokalen Testinstallation
 
-Die alten lokalen Testmanifeste besitzen noch keine Update-URL. Entferne deshalb einmalig die alte Testinstallation unter `Plugins` und installiere anschließend Version 0.2.1 über die oben genannte Gitea-URL. Bereits vorhandene ZFS-Snapshots werden bei der Deinstallation nicht verändert.
+Die alten lokalen Testmanifeste besitzen noch keine Update-URL. Entferne deshalb einmalig die alte Testinstallation unter `Plugins` und installiere anschließend Version 0.2.2 über die oben genannte GitHub-URL. Bereits vorhandene ZFS-Snapshots werden bei der Deinstallation nicht verändert.
 
 ## Updates
 
-Nach der Installation über Gitea werden neue Versionen unter `Plugins > Check for Updates` erkannt und über die normale Unraid-GUI installiert. Manuelle `upgradepkg`-Befehle sind dann nicht mehr erforderlich.
+Nach der Installation über GitHub werden neue Versionen unter `Plugins > Check for Updates` erkannt und über die normale Unraid-GUI installiert. Manuelle `upgradepkg`-Befehle sind dann nicht mehr erforderlich.
 
 ## Deinstallation
 
@@ -94,6 +94,6 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Test auf verschiedenen Unraid- und OpenZFS-Versionen
 - paginierte oder gefilterte Snapshot-Liste für große Systeme
 - Tests für Holds, Clones und Abhängigkeiten vor dem späteren Löschen
-- automatisierte Erstellung von Gitea-Releases und Tags
+- automatisierte Erstellung von GitHub-Releases und Tags
 - endgültige Open-Source-Lizenz
 

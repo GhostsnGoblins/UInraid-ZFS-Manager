@@ -42,3 +42,7 @@ TestResults/
 
 # Release-Artefakte unter dist/ werden absichtlich versioniert.
 
+# Lokale, repositoryübergreifende Git-Helfer
+/pull-current-repo.bat
+/push-current-repo.bat
+

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Öffentlichen Updatekanal von Gitea auf GitHub umstellen
+- Installations- und Paket-URLs auf `raw.githubusercontent.com` ändern
+- Lokale, repositoryübergreifende Git-Helferskripte von der Versionierung ausschließen
+
 ## 0.2.1
 
 - Gitea als dauerhaften Unraid-Updatekanal einrichten
