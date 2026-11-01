@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.2-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.2.3-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -26,8 +26,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0\.2\.2';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.2.'
+if ($library -notmatch "const ZSM_VERSION = '0\.2\.3';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.2.3.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -38,7 +38,7 @@ if ($backend -notmatch 'flock -n') {
     throw 'Backend enthält keine exklusive Schreibsperre.'
 }
 if ($backend -match 'zfs destroy|zfs rollback|zfs clone') {
-    throw 'Backend enthält eine für Version 0.2.2 unerlaubte destruktive Aktion.'
+    throw 'Backend enthält eine für Version 0.2.3 unerlaubte destruktive Aktion.'
 }
 if ($backend -notmatch 'org\.unraidzfsmanager:kind') {
     throw 'Backend kennzeichnet erstellte Snapshots nicht.'
@@ -75,6 +75,12 @@ if ($settingsPage -notmatch '^Menu="OtherSettings"') {
 if ($settingsPage -match 'list-datasets|list-snapshots|Snapshot erstellen') {
     throw 'Einstellungsseite enthält weiterhin Snapshot-Verwaltung.'
 }
+if ($settingsPage -notmatch '<form markdown="1"' -or $settingsPage -notmatch ': <select id="zsm-enabled"') {
+    throw 'Einstellungsseite verwendet nicht das native Unraid-Formularraster.'
+}
+if ($settingsPage -match '<div class="title"') {
+    throw 'Einstellungsseite enthält eine doppelte Seitenüberschrift.'
+}
 
 $topPagePath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\Snapshots.page'
 $topPage = Get-Content -Raw -LiteralPath $topPagePath
@@ -86,7 +92,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.2-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.2.3-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }

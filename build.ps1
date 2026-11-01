@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.2.2',
+    [string]$Version = '0.2.3',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -79,6 +79,7 @@ $manifest = @"
 ### $Version
 
 - Uses GitHub as the public Unraid update channel
+- Uses the native Unraid settings form layout
 - Adds a top-level Snapshots tab beside Docker and VMs
 - Keeps only the enable/disable switch under Settings
 - Blocks write actions while the plugin is disabled

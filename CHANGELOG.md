@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+- Einstellungsseite auf das native Unraid-Formularraster umstellen
+- Auswahlfeld auf die übliche Einstellungsbreite begrenzen
+- Doppelte Seitenüberschrift entfernen
+- Schaltfläche `Anwenden` erst nach einer Änderung aktivieren
+
 ## 0.2.2
 
 - Öffentlichen Updatekanal von Gitea auf GitHub umstellen
