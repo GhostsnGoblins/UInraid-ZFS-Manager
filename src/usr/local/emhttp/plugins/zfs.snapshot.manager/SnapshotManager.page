@@ -28,6 +28,12 @@ $policies = zsm_load_policies();
 $frequencyLabels = zsm_frequency_labels();
 $retentionUnitLabels = zsm_retention_unit_labels();
 $weekdayLabels = zsm_weekday_labels();
+$filesystemsLoaded = zsm_load_filesystems();
+$filesystems = $filesystemsLoaded['filesystems'];
+$shareUsers = zsm_load_unraid_users();
+$snapshotShares = zsm_resolve_shares(zsm_load_shares(), $filesystems, $shareUsers);
+$storedShareUsers = array_column(zsm_load_shares(), 'users', 'id');
+$serverName = (string) ($var['NAME'] ?? 'Tower');
 
 $errors = [];
 if ($datasetResult['exitCode'] !== 0) {
@@ -80,6 +86,9 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-policy-actions .zsm-danger { background:#b71c1c !important; border-color:#b71c1c !important; color:#fff !important; }
 .zsm-policy-checkbox input { width:auto; margin-right:6px; }
 .zsm-policy-scope { grid-column:1/-1; padding:9px 11px; border-left:3px solid #ff8c00; background:rgba(255,140,0,.08); }
+.zsm-share-users { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px 16px; }
+.zsm-share-users label { flex-direction:row; align-items:center; gap:6px; }
+.zsm-share-users input { width:auto; margin:0; }
 </style>
 
 <div class="zsm-toolbar">
@@ -220,6 +229,72 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
               <button type="button" class="zsm-policy-run" data-id="<?=zsm_h($policy['id'])?>">Jetzt ausführen</button>
               <button type="button" class="zsm-policy-preview" data-id="<?=zsm_h($policy['id'])?>">Löschvorschau</button>
               <button type="button" class="zsm-policy-delete zsm-danger" data-id="<?=zsm_h($policy['id'])?>">Regel löschen</button>
+            </div></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="zsm-panel">
+  <h2>Snapshot-Freigaben</h2>
+  <p>Pro Dataset zeigt eine private, schreibgeschützte SMB-Freigabe automatisch alle Snapshots als Ordner an. Einzelne Snapshots müssen nicht eingerichtet werden. Die Rechte der normalen Unraid-Freigabe werden nicht übernommen.</p>
+  <div class="zsm-notice">Wer Zugriff erhält, kann auch ältere und inzwischen gelöschte Dateien lesen. Untergeordnete Datasets sind nicht enthalten und brauchen eine eigene Freigabe.</div>
+  <?php if ($filesystems && $shareUsers): ?>
+    <form id="zsm-share-form" class="zsm-policy-form" method="post">
+      <input id="zsm-share-id" type="hidden" value="">
+      <label>Dataset
+        <select id="zsm-share-dataset" required>
+          <?php foreach ($filesystems as $filesystem): ?>
+            <option value="<?=zsm_h($filesystem['guid'])?>" data-name="<?=zsm_h($filesystem['name'])?>"><?=zsm_h($filesystem['name'])?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Freigabename
+        <input id="zsm-share-name" type="text" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*" required>
+      </label>
+      <div class="zsm-policy-actions">
+        <button id="zsm-share-save" type="submit">Freigabe speichern</button>
+        <button id="zsm-share-cancel" type="button" style="display:none">Abbrechen</button>
+      </div>
+      <div class="zsm-share-users">
+        <strong>Zugriff (mindestens ein Benutzer):</strong>
+        <?php foreach ($shareUsers as $shareUser): ?>
+          <label><input class="zsm-share-user" type="checkbox" value="<?=zsm_h($shareUser)?>"><?=zsm_h($shareUser)?></label>
+        <?php endforeach; ?>
+      </div>
+    </form>
+  <?php elseif (!$shareUsers): ?>
+    <p class="zsm-muted">Es gibt keinen Unraid-Benutzer mit Passwort. Lege zuerst unter „Users“ einen Benutzer an.</p>
+  <?php else: ?>
+    <p class="zsm-muted">Für eine Freigabe muss ein eingehängtes ZFS-Dataset verfügbar sein.</p>
+  <?php endif; ?>
+
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th>Freigabe</th><th>Dataset</th><th>Benutzer</th><th>Status</th><th>Aktion</th></tr></thead>
+      <tbody>
+      <?php if (!$snapshotShares): ?>
+        <tr><td colspan="5">Noch keine Snapshot-Freigabe eingerichtet.</td></tr>
+      <?php else: ?>
+        <?php foreach ($snapshotShares as $share): ?>
+          <tr>
+            <td>\\<?=zsm_h($serverName)?>\<?=zsm_h($share['name'])?></td>
+            <td><?=zsm_h($share['dataset'])?></td>
+            <td><?=zsm_h(implode(', ', $share['users']))?></td>
+            <td class="<?=$share['problem'] === '' ? 'zsm-state-good' : 'zsm-state-warn'?>"><?=zsm_h($share['problem'] === '' ? 'Aktiv, nur Lesen' : 'Inaktiv: ' . $share['problem'])?></td>
+            <td><div class="zsm-policy-actions">
+              <button
+                type="button"
+                class="zsm-share-edit"
+                data-id="<?=zsm_h($share['id'])?>"
+                data-guid="<?=zsm_h($share['dataset_guid'])?>"
+                data-name="<?=zsm_h($share['name'])?>"
+                data-users="<?=zsm_h(implode(' ', $storedShareUsers[$share['id']] ?? []))?>"
+              >Bearbeiten</button>
+              <button type="button" class="zsm-share-delete zsm-danger" data-id="<?=zsm_h($share['id'])?>">Freigabe entfernen</button>
             </div></td>
           </tr>
         <?php endforeach; ?>
@@ -446,6 +521,90 @@ $(function () {
     if (window.confirm('Zeitplan wirklich löschen? Bereits vorhandene Snapshots bleiben erhalten.')) {
       policyRequest($(this), 'delete', 'Wird gelöscht...');
     }
+  });
+
+  function suggestShareName() {
+    if ($('#zsm-share-id').val()) {
+      return;
+    }
+    var dataset = String($('#zsm-share-dataset option:selected').attr('data-name') || '');
+    $('#zsm-share-name').val(dataset.split('/').pop().replace(/[^A-Za-z0-9_-]/g, '-') + '-snapshots');
+  }
+
+  function resetShareForm() {
+    $('#zsm-share-id').val('');
+    $('#zsm-share-dataset').prop('disabled', false);
+    $('.zsm-share-user').prop('checked', false);
+    $('#zsm-share-save').text('Freigabe speichern');
+    $('#zsm-share-cancel').hide();
+    suggestShareName();
+  }
+
+  function shareRequest(data, fallbackMessage, onFail) {
+    data.csrf_token = <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/shares.php',
+      method: 'POST',
+      dataType: 'json',
+      data: data
+    }).done(function (response) {
+      showMessage(response.message, false);
+      window.setTimeout(function () { window.location.reload(); }, 900);
+    }).fail(function (xhr) {
+      showMessage((xhr.responseJSON || {}).message || fallbackMessage, true);
+      onFail();
+    });
+  }
+
+  $('#zsm-share-dataset').on('change', suggestShareName);
+  suggestShareName();
+
+  $('#zsm-share-form').on('submit', function (event) {
+    event.preventDefault();
+    var button = $('#zsm-share-save');
+    var label = button.text();
+    var users = $('.zsm-share-user:checked').map(function () { return this.value; }).get();
+    if (!users.length) {
+      showMessage('Mindestens ein Benutzer muss ausgewählt werden.', true);
+      return;
+    }
+    button.prop('disabled', true).text('Wird gespeichert...');
+    shareRequest({
+      action: 'save',
+      id: $('#zsm-share-id').val(),
+      dataset_guid: $('#zsm-share-dataset').val(),
+      name: $('#zsm-share-name').val(),
+      users: users
+    }, 'Die Freigabe konnte nicht gespeichert werden.', function () {
+      button.prop('disabled', false).text(label);
+    });
+  });
+
+  $('.zsm-share-edit').on('click', function () {
+    var button = $(this);
+    var users = String(button.attr('data-users') || '').split(' ');
+    $('#zsm-share-id').val(String(button.attr('data-id') || ''));
+    $('#zsm-share-dataset').val(String(button.attr('data-guid') || '')).prop('disabled', true);
+    $('#zsm-share-name').val(String(button.attr('data-name') || ''));
+    $('.zsm-share-user').each(function () {
+      this.checked = users.indexOf(this.value) !== -1;
+    });
+    $('#zsm-share-save').text('Änderungen speichern');
+    $('#zsm-share-cancel').show();
+    document.getElementById('zsm-share-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  $('#zsm-share-cancel').on('click', resetShareForm);
+
+  $('.zsm-share-delete').on('click', function () {
+    var button = $(this);
+    if (!window.confirm('Freigabe wirklich entfernen? Snapshots und Daten bleiben erhalten.')) {
+      return;
+    }
+    button.prop('disabled', true).text('Wird entfernt...');
+    shareRequest({ action: 'delete', id: String(button.data('id') || '') }, 'Die Freigabe konnte nicht entfernt werden.', function () {
+      button.prop('disabled', false).text('Freigabe entfernen');
+    });
   });
 
   $('#zsm-create-form').on('submit', function (event) {

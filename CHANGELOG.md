@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- pro Dataset eine private, schreibgeschützte SMB-Freigabe auf `.zfs/snapshot` einrichten
+- alle Snapshots automatisch und ohne Samba-Neuladen sichtbar machen
+- Zugriff nur für explizit ausgewählte Unraid-Benutzer mit Passwort erlauben
+- Freigaben über die ZFS-GUID binden, damit sie Dataset-Umbenennungen überstehen
+- `wide links` je Freigabe abschalten und Konfiguration vor dem Aktivieren mit `testparm` prüfen
+- bestehende Verbindungen bei Änderungen trennen und alles beim Deaktivieren oder Entfernen zurücknehmen
+
 ## 0.6.1
 
 - geplante Snapshot-Läufe bei gleichzeitiger 15-Minuten-Bereinigung nicht mehr sofort abbrechen

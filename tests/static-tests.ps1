@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.6.1-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.7.0-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -29,8 +29,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0\.6\.1';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.6.1.'
+if ($library -notmatch "const ZSM_VERSION = '0.7.0';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.7.0.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -149,7 +149,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.6.1-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.7.0-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
@@ -193,6 +193,33 @@ if ($policyRunner -notmatch "'cleanup-policy'" -or $policyRunner -notmatch 'zsm_
 $eventStarted = Get-Content -Raw -LiteralPath $eventStartedPath
 if ($eventStarted -notmatch 'apply-cron\.php') {
     throw 'Array-Start stellt die Cron-Zeitpläne nicht wieder her.'
+}
+
+$sharesEndpointPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\shares.php'
+$sharesEndpoint = Get-Content -Raw -LiteralPath $sharesEndpointPath
+if ($sharesEndpoint -match 'shell_exec|exec\s*\(|system\s*\(|passthru\s*\(') {
+    throw 'Freigabe-Endpunkt darf keine Shell-Ausführungsfunktion verwenden.'
+}
+if ($sharesEndpoint -notmatch 'zsm_is_enabled\(\)' -or $sharesEndpoint -notmatch 'zsm_save_shares\(\$previousShares\)') {
+    throw 'Freigabe-Endpunkt sperrt im deaktivierten Zustand nicht oder stellt nach Fehlern nicht wieder her.'
+}
+if ($library -notmatch 'read only = yes' -or $library -notmatch 'guest ok = no' -or $library -notmatch 'wide links = no') {
+    throw 'Snapshot-Freigaben sind nicht fest privat, schreibgeschützt und ohne wide links.'
+}
+if ($library -match 'guest ok = yes|read only = no|writeable|writable') {
+    throw 'Snapshot-Freigaben dürfen weder Gäste noch Schreibzugriff erlauben.'
+}
+if ($backend -notmatch 'testparm -s' -or $backend -notmatch 'close-share') {
+    throw 'Backend prüft die Samba-Konfiguration nicht oder trennt bestehende Verbindungen nicht.'
+}
+if ($manifestText -notmatch 'remove-samba-config' -or $manifestText -notmatch 'apply-shares\.php') {
+    throw 'Manifest behandelt Snapshot-Freigaben bei Installation oder Entfernen nicht.'
+}
+if ($eventStarted -notmatch 'apply-shares\.php') {
+    throw 'Array-Start stellt die Snapshot-Freigaben nicht wieder her.'
+}
+if ($page -notmatch 'zsm-share-form' -or $page -notmatch 'zsm-share-user') {
+    throw 'Hauptseite enthält keine Verwaltung der Snapshot-Freigaben.'
 }
 
 $linuxFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Recurse -File

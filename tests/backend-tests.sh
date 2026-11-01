@@ -258,4 +258,92 @@ set -e
 ! grep -Fq 'destroy tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z' "$mock_log"
 ! grep -Fq 'destroy tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z' "$mock_log"
 
+samba_root="$test_root/samba"
+mkdir -p "$samba_root"
+samba_log="$test_root/samba.log"
+extra_config="$samba_root/smb-extra.conf"
+candidate_config="$samba_root/smb-snapshots.conf.new"
+active_config="$samba_root/smb-snapshots.conf"
+export ZSM_SAMBA_CONFIG_DIR="$samba_root"
+export ZSM_SAMBA_EXTRA_CONFIG="$extra_config"
+export ZSM_SAMBA_LOCK_FILE="$test_root/samba.lock"
+export MOCK_SAMBA_LOG="$samba_log"
+
+cat > "$test_root/bin/testparm" <<'MOCK'
+#!/bin/bash
+printf 'testparm %s\n' "$*" >> "$MOCK_SAMBA_LOG"
+[[ -z "${MOCK_TESTPARM_FAIL:-}" ]]
+MOCK
+cat > "$test_root/bin/smbcontrol" <<'MOCK'
+#!/bin/bash
+printf 'smbcontrol %s\n' "$*" >> "$MOCK_SAMBA_LOG"
+MOCK
+cat > "$test_root/bin/pidof" <<'MOCK'
+#!/bin/bash
+[[ -z "${MOCK_SMBD_STOPPED:-}" ]]
+MOCK
+chmod 755 "$test_root/bin/testparm" "$test_root/bin/smbcontrol" "$test_root/bin/pidof"
+
+"$backend" list-filesystems >/dev/null
+grep -Fq 'list -H -p -t filesystem -o guid,name,mountpoint,mounted -s name' "$mock_log"
+
+# Ohne Freigaben bleibt eine fremde smb-extra.conf unberuehrt.
+printf '[global]\n  custom = 1' > "$extra_config"
+original_extra="$(cat "$extra_config")"
+printf '# leer\n' > "$candidate_config"
+"$backend" apply-samba-config
+[[ "$(cat "$extra_config")" == "$original_extra" ]]
+[[ ! -e "$active_config" && ! -e "$candidate_config" ]]
+[[ ! -e "$samba_log" ]] || ! grep -Fq 'reload-config' "$samba_log"
+
+printf '# Test\n\n[data-snapshots]\n\tpath = /mnt/tank/data/.zfs/snapshot\n' > "$candidate_config"
+"$backend" apply-samba-config
+[[ -f "$active_config" && ! -e "$candidate_config" ]]
+[[ "$(grep -c 'BEGIN zfs.snapshot.manager' "$extra_config")" == '1' ]]
+grep -Fxq "include = $active_config" "$extra_config"
+grep -Fq 'custom = 1' "$extra_config"
+grep -Fq 'smbcontrol smbd reload-config' "$samba_log"
+
+# Wiederholtes Anwenden erzeugt keinen zweiten Block und trennt alte Verbindungen.
+printf '[other-snapshots]\n\tpath = /mnt/tank/other/.zfs/snapshot\n' > "$candidate_config"
+"$backend" apply-samba-config
+[[ "$(grep -c 'BEGIN zfs.snapshot.manager' "$extra_config")" == '1' ]]
+grep -Fq 'smbcontrol smbd close-share data-snapshots' "$samba_log"
+
+# Eine abgelehnte Konfiguration veraendert die aktive nicht.
+active_before="$(cat "$active_config")"
+printf '[broken]\n\tbad = yes\n' > "$candidate_config"
+set +e
+rejected_output="$(MOCK_TESTPARM_FAIL=1 "$backend" apply-samba-config 2>&1)"
+rejected_status=$?
+set -e
+[[ $rejected_status -eq 78 ]]
+[[ "$rejected_output" == *"abgelehnt"* ]]
+[[ "$(cat "$active_config")" == "$active_before" && ! -e "$candidate_config" ]]
+
+# Ein beschaedigter Block wird nicht entfernt, damit keine fremden Zeilen verloren gehen.
+good_extra="$(cat "$extra_config")"
+sed -i '/END zfs.snapshot.manager/d' "$extra_config"
+printf '[foreign]\n' >> "$extra_config"
+broken_extra="$(cat "$extra_config")"
+set +e
+"$backend" remove-samba-config >/dev/null 2>&1
+broken_status=$?
+set -e
+[[ $broken_status -eq 74 ]]
+[[ "$(cat "$extra_config")" == "$broken_extra" ]]
+printf '%s\n' "$good_extra" > "$extra_config"
+
+# Laeuft smbd nicht, ist die Konfiguration trotzdem aktiv.
+: > "$samba_log"
+printf '[other-snapshots]\n\tpath = /mnt/tank/other/.zfs/snapshot\n' > "$candidate_config"
+MOCK_SMBD_STOPPED=1 "$backend" apply-samba-config
+! grep -Fq 'reload-config' "$samba_log"
+
+"$backend" remove-samba-config
+[[ ! -e "$active_config" ]]
+! grep -Fq 'zfs.snapshot.manager' "$extra_config"
+grep -Fq 'custom = 1' "$extra_config"
+grep -Fq 'smbcontrol smbd close-share other-snapshots' "$samba_log"
+
 printf 'Backend-Tests erfolgreich.\n'

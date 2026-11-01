@@ -166,7 +166,7 @@ Der sichere Standard soll die nicht-destruktive Wiederherstellung einzelner Date
 
 ### 3.5 Windows-Vorgängerversionen
 
-Eine spätere Funktion soll vorhandene ZFS-Snapshots über SMB für Windows-Clients zugänglich machen.
+Seit Version 0.7.0 macht das Plugin Snapshots über eine private, schreibgeschützte SMB-Freigabe pro Dataset zugänglich. Eine spätere Funktion soll sie zusätzlich direkt in Windows-Vorgängerversionen anzeigen.
 
 Hierfür wird die Integration über Sambas `shadow_copy2` geprüft.
 

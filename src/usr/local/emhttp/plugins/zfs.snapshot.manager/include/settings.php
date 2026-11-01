@@ -33,6 +33,17 @@ if ($cronResult['exitCode'] !== 0) {
     ]);
 }
 
+$sharesLock = zsm_lock_shares(true);
+$sharesResult = $sharesLock !== null
+    ? zsm_apply_shares()
+    : ['exitCode' => 75, 'stderr' => 'Die Freigaben-Sperre konnte nicht gesetzt werden.'];
+if ($sharesResult['exitCode'] !== 0) {
+    settings_respond(500, [
+        'ok' => false,
+        'message' => 'Die Einstellung wurde gespeichert, aber die Snapshot-Freigaben konnten nicht aktualisiert werden: ' . $sharesResult['stderr'],
+    ]);
+}
+
 openlog('zfs.snapshot.manager', LOG_PID, LOG_USER);
 syslog(LOG_NOTICE, 'setting enabled=' . $enabled);
 closelog();

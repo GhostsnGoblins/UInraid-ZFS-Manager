@@ -7,7 +7,11 @@ const ZSM_CONFIG_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.
 const ZSM_POLICIES_FILE = '/boot/config/plugins/zfs.snapshot.manager/policies.json';
 const ZSM_CRON_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron';
 const ZSM_POLICY_RUNNER = '/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php';
-const ZSM_VERSION = '0.6.1';
+const ZSM_SHARES_FILE = '/boot/config/plugins/zfs.snapshot.manager/shares.json';
+const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-snapshots.conf.new';
+const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
+const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
+const ZSM_VERSION = '0.7.0';
 
 function zsm_is_enabled(): bool
 {
@@ -365,6 +369,241 @@ function zsm_apply_cron(): array
         return ['exitCode' => 1, 'stdout' => '', 'stderr' => 'Die Cron-Datei konnte nicht geschrieben werden.', 'timedOut' => false];
     }
     return zsm_run(['refresh-cron'], 30);
+}
+
+function zsm_is_valid_share_name(string $name): bool
+{
+    return preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/D', $name) === 1;
+}
+
+function zsm_is_valid_user_name(string $name): bool
+{
+    return $name !== 'root' && preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}$/D', $name) === 1;
+}
+
+function zsm_is_valid_dataset_guid(string $guid): bool
+{
+    return preg_match('/^[0-9]{1,20}$/D', $guid) === 1;
+}
+
+/** Nur diese Pfade duerfen in die Samba-Konfiguration, damit keine Makros oder Zeilenumbrueche hineingelangen. */
+function zsm_is_safe_mountpoint(string $mountpoint): bool
+{
+    return preg_match('#^(/[A-Za-z0-9_.:-]+)+$#D', $mountpoint) === 1
+        && !in_array('..', explode('/', $mountpoint), true);
+}
+
+/**
+ * @param array<string,mixed> $share
+ * @return array{id:string,dataset_guid:string,dataset:string,name:string,users:list<string>}|null
+ */
+function zsm_normalize_share(array $share): ?array
+{
+    $id = $share['id'] ?? '';
+    $guid = $share['dataset_guid'] ?? '';
+    $dataset = $share['dataset'] ?? '';
+    $name = $share['name'] ?? '';
+    $users = $share['users'] ?? [];
+
+    if (!is_string($id) || !zsm_is_valid_policy_id($id)
+        || !is_string($guid) || !zsm_is_valid_dataset_guid($guid)
+        || !is_string($dataset) || !zsm_is_valid_dataset($dataset)
+        || !is_string($name) || !zsm_is_valid_share_name($name)
+        || !is_array($users) || !array_is_list($users) || $users === []) {
+        return null;
+    }
+    foreach ($users as $user) {
+        if (!is_string($user) || !zsm_is_valid_user_name($user)) {
+            return null;
+        }
+    }
+
+    $users = array_values(array_unique($users));
+    sort($users);
+    return ['id' => $id, 'dataset_guid' => $guid, 'dataset' => $dataset, 'name' => $name, 'users' => $users];
+}
+
+/** @return list<array{id:string,dataset_guid:string,dataset:string,name:string,users:list<string>}> */
+function zsm_load_shares(): array
+{
+    $raw = is_file(ZSM_SHARES_FILE) ? @file_get_contents(ZSM_SHARES_FILE) : false;
+    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($decoded) || !array_is_list($decoded)) {
+        return [];
+    }
+
+    $shares = [];
+    foreach ($decoded as $candidate) {
+        $share = is_array($candidate) ? zsm_normalize_share($candidate) : null;
+        if ($share !== null) {
+            $shares[] = $share;
+        }
+    }
+    return $shares;
+}
+
+/** @param list<array<string,mixed>> $shares */
+function zsm_save_shares(array $shares): bool
+{
+    $normalized = [];
+    foreach ($shares as $candidate) {
+        $share = zsm_normalize_share($candidate);
+        if ($share === null) {
+            return false;
+        }
+        $normalized[] = $share;
+    }
+
+    $contents = json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return is_string($contents) && zsm_atomic_write(ZSM_SHARES_FILE, $contents . PHP_EOL, 0600);
+}
+
+/**
+ * Unraid-Benutzer mit gesetztem Passwort. Samba laeuft hier mit "null passwords",
+ * ein Konto ohne Passwort waere also kein wirksamer Zugriffsschutz.
+ *
+ * @return list<string>
+ */
+function zsm_load_unraid_users(string $path = ZSM_UNRAID_USERS_FILE): array
+{
+    $entries = is_file($path) ? @parse_ini_file($path, true, INI_SCANNER_RAW) : false;
+    if (!is_array($entries)) {
+        return [];
+    }
+
+    $users = [];
+    foreach ($entries as $entry) {
+        $name = is_array($entry) ? ($entry['name'] ?? '') : '';
+        if (is_string($name) && zsm_is_valid_user_name($name) && ($entry['passwd'] ?? '') === 'yes') {
+            $users[] = $name;
+        }
+    }
+    sort($users);
+    return array_values(array_unique($users));
+}
+
+/** @return list<string> Kleingeschriebene Freigabenamen, die Unraid oder Samba bereits verwenden. */
+function zsm_reserved_share_names(string $path = ZSM_UNRAID_SHARES_FILE): array
+{
+    $names = ['global', 'homes', 'printers', 'print$', 'ipc$', 'flash', 'user', 'user0'];
+    $entries = is_file($path) ? @parse_ini_file($path, true, INI_SCANNER_RAW) : false;
+    if (is_array($entries)) {
+        foreach (array_keys($entries) as $name) {
+            $names[] = strtolower(trim((string) $name, '"'));
+        }
+    }
+    return $names;
+}
+
+/** @return array{ok:bool,error:string,filesystems:list<array<string,string>>} */
+function zsm_load_filesystems(): array
+{
+    $result = zsm_run(['list-filesystems']);
+    if ($result['exitCode'] !== 0) {
+        return ['ok' => false, 'error' => $result['stderr'] ?: 'Datasets konnten nicht geprüft werden.', 'filesystems' => []];
+    }
+    return [
+        'ok' => true,
+        'error' => '',
+        'filesystems' => zsm_parse_tsv($result['stdout'], ['guid', 'name', 'mountpoint', 'mounted']),
+    ];
+}
+
+/**
+ * Ordnet Freigaben ueber die Dataset-GUID dem aktuellen Dataset zu. Eine Freigabe
+ * wird nur aktiv, wenn Dataset, Mountpoint und mindestens ein Benutzer gueltig sind.
+ *
+ * @param list<array{id:string,dataset_guid:string,dataset:string,name:string,users:list<string>}> $shares
+ * @param list<array<string,string>> $filesystems
+ * @param list<string> $users
+ * @return list<array{id:string,dataset_guid:string,dataset:string,name:string,users:list<string>,path:string,problem:string}>
+ */
+function zsm_resolve_shares(array $shares, array $filesystems, array $users): array
+{
+    $byGuid = array_column($filesystems, null, 'guid');
+    $resolved = [];
+    foreach ($shares as $share) {
+        $filesystem = $byGuid[$share['dataset_guid']] ?? null;
+        $allowedUsers = array_values(array_intersect($share['users'], $users));
+        $share['users'] = $allowedUsers;
+        $share['path'] = '';
+        $share['problem'] = '';
+
+        if ($filesystem === null) {
+            $share['problem'] = 'Dataset nicht gefunden';
+        } elseif ($filesystem['mounted'] !== 'yes' || !zsm_is_safe_mountpoint($filesystem['mountpoint'])) {
+            $share['dataset'] = $filesystem['name'];
+            $share['problem'] = 'Dataset nicht sicher eingehängt';
+        } elseif ($allowedUsers === []) {
+            $share['dataset'] = $filesystem['name'];
+            $share['problem'] = 'Kein gültiger Benutzer mit Passwort';
+        } else {
+            $share['dataset'] = $filesystem['name'];
+            $share['path'] = $filesystem['mountpoint'] . '/.zfs/snapshot';
+        }
+        $resolved[] = $share;
+    }
+    return $resolved;
+}
+
+/** @param list<array{dataset:string,name:string,users:list<string>,path:string,problem:string}> $resolvedShares */
+function zsm_render_samba_config(array $resolvedShares): string
+{
+    $lines = ['# Generated by ZFS Snapshot Manager. Do not edit manually.'];
+    foreach ($resolvedShares as $share) {
+        if ($share['problem'] !== '') {
+            continue;
+        }
+        $users = implode(' ', $share['users']);
+        array_push(
+            $lines,
+            '',
+            '[' . $share['name'] . ']',
+            "\tcomment = ZFS Snapshots von " . $share['dataset'],
+            "\tpath = " . $share['path'],
+            "\tvalid users = " . $users,
+            "\tread list = " . $users,
+            "\twrite list =",
+            "\tadmin users =",
+            "\tforce user =",
+            "\tforce group =",
+            "\tread only = yes",
+            "\tguest ok = no",
+            "\tbrowseable = yes",
+            "\taccess based share enum = yes",
+            // Unraid setzt global "wide links = Yes", Snapshots duerfen die Freigabe aber nicht verlassen.
+            "\twide links = no",
+            // Leere VFS-Liste: kein Papierkorb und keine Unraid-Module auf dieser Freigabe.
+            "\tvfs objects ="
+        );
+    }
+    return implode("\n", $lines) . "\n";
+}
+
+/** @return resource|null */
+function zsm_lock_shares(bool $wait)
+{
+    $lock = @fopen('/var/run/zfs.snapshot.manager.shares.lock', 'c');
+    if ($lock === false || !flock($lock, $wait ? LOCK_EX : LOCK_EX | LOCK_NB)) {
+        return null;
+    }
+    return $lock;
+}
+
+/** @return array{exitCode:int,stdout:string,stderr:string,timedOut:bool} */
+function zsm_apply_shares(): array
+{
+    $loaded = zsm_load_filesystems();
+    if (!$loaded['ok']) {
+        return ['exitCode' => 1, 'stdout' => '', 'stderr' => $loaded['error'], 'timedOut' => false];
+    }
+
+    $shares = zsm_is_enabled() ? zsm_load_shares() : [];
+    $resolved = zsm_resolve_shares($shares, $loaded['filesystems'], zsm_load_unraid_users());
+    if (!zsm_atomic_write(ZSM_SAMBA_CANDIDATE_FILE, zsm_render_samba_config($resolved), 0600)) {
+        return ['exitCode' => 1, 'stdout' => '', 'stderr' => 'Die Samba-Konfiguration konnte nicht geschrieben werden.', 'timedOut' => false];
+    }
+    return zsm_run(['apply-samba-config'], 60);
 }
 
 /** @return list<array<string,string>> */

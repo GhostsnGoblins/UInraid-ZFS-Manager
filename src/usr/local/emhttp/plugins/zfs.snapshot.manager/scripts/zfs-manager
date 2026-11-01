@@ -10,6 +10,13 @@ readonly CRON_LOCK_FILE="${ZSM_CRON_LOCK_FILE:-/var/run/${PLUGIN_NAME}.cron.lock
 readonly UPDATE_CRON_BIN="${ZSM_UPDATE_CRON_BIN:-/usr/local/sbin/update_cron}"
 readonly SNAPSHOT_KIND_PROPERTY="org.unraidzfsmanager:kind"
 readonly SNAPSHOT_POLICY_PROPERTY="org.unraidzfsmanager:policy"
+readonly SAMBA_LOCK_FILE="${ZSM_SAMBA_LOCK_FILE:-/var/run/${PLUGIN_NAME}.samba.lock}"
+readonly SAMBA_CONFIG_DIR="${ZSM_SAMBA_CONFIG_DIR:-/boot/config/plugins/${PLUGIN_NAME}}"
+readonly SAMBA_ACTIVE_CONFIG="${SAMBA_CONFIG_DIR}/smb-snapshots.conf"
+readonly SAMBA_CANDIDATE_CONFIG="${SAMBA_CONFIG_DIR}/smb-snapshots.conf.new"
+readonly SAMBA_EXTRA_CONFIG="${ZSM_SAMBA_EXTRA_CONFIG:-/boot/config/smb-extra.conf}"
+readonly SAMBA_BLOCK_BEGIN="# BEGIN ${PLUGIN_NAME}"
+readonly SAMBA_BLOCK_END="# END ${PLUGIN_NAME}"
 
 fail() {
   printf 'Fehler: %s\n' "$1" >&2
@@ -81,6 +88,115 @@ list_snapshots() {
   local zfs_bin="$1"
   "$zfs_bin" list -H -p -t snapshot \
     -o name,creation,used,referenced,clones,"$SNAPSHOT_KIND_PROPERTY" -s creation
+}
+
+list_filesystems() {
+  local zfs_bin="$1"
+  "$zfs_bin" list -H -p -t filesystem -o guid,name,mountpoint,mounted -s name
+}
+
+samba_share_names() {
+  local config="$1"
+  [[ -f "$config" ]] || return 0
+  sed -n 's/^\[\([A-Za-z0-9][A-Za-z0-9_-]*\)\]$/\1/p' "$config"
+}
+
+strip_samba_block() {
+  [[ -f "$SAMBA_EXTRA_CONFIG" ]] || return 0
+  awk -v begin="$SAMBA_BLOCK_BEGIN" -v end="$SAMBA_BLOCK_END" '
+    { line = $0; sub(/\r$/, "", line) }
+    line == begin { skipping = 1; next }
+    line == end { skipping = 0; next }
+    !skipping { print }
+  ' "$SAMBA_EXTRA_CONFIG"
+}
+
+replace_samba_extra() {
+  local contents_file="$1"
+  local temporary
+  temporary="$(mktemp "${SAMBA_EXTRA_CONFIG}.XXXXXX")" || return 1
+  if ! cat "$contents_file" > "$temporary" || ! mv -f "$temporary" "$SAMBA_EXTRA_CONFIG"; then
+    rm -f "$temporary"
+    return 1
+  fi
+}
+
+write_samba_block() {
+  local enabled="$1"
+  local temporary
+  if [[ -f "$SAMBA_EXTRA_CONFIG" ]] && grep -Fq "$SAMBA_BLOCK_BEGIN" "$SAMBA_EXTRA_CONFIG"; then
+    # Ohne Endmarke wuerde das Entfernen fremde Zeilen mitnehmen.
+    grep -Fq "$SAMBA_BLOCK_END" "$SAMBA_EXTRA_CONFIG" || return 1
+  elif [[ "$enabled" != "1" ]]; then
+    return 0
+  fi
+  temporary="$(mktemp)" || return 1
+  if ! strip_samba_block > "$temporary"; then
+    rm -f "$temporary"
+    return 1
+  fi
+  if [[ "$enabled" == "1" ]]; then
+    printf '%s\ninclude = %s\n%s\n' \
+      "$SAMBA_BLOCK_BEGIN" "$SAMBA_ACTIVE_CONFIG" "$SAMBA_BLOCK_END" >> "$temporary"
+  fi
+  replace_samba_extra "$temporary"
+  local status=$?
+  rm -f "$temporary"
+  return "$status"
+}
+
+reload_samba() {
+  local name
+  command -v pidof >/dev/null 2>&1 && ! pidof smbd >/dev/null 2>&1 && return 0
+  smbcontrol smbd reload-config >/dev/null 2>&1 || return 1
+  # Bestehende Verbindungen sollen entzogene Rechte nicht behalten.
+  for name in "$@"; do
+    smbcontrol smbd close-share "$name" >/dev/null 2>&1 || true
+  done
+}
+
+apply_samba_config() {
+  local -a previous_shares
+  exec 7>"$SAMBA_LOCK_FILE"
+  flock -w 30 7 || fail "Eine andere Samba-Aktualisierung läuft bereits." 75
+  [[ -f "$SAMBA_CANDIDATE_CONFIG" ]] || fail "Die neue Samba-Konfiguration fehlt." 66
+  mapfile -t previous_shares < <(samba_share_names "$SAMBA_ACTIVE_CONFIG")
+
+  if ! testparm -s "$SAMBA_CANDIDATE_CONFIG" >/dev/null 2>&1; then
+    rm -f "$SAMBA_CANDIDATE_CONFIG"
+    write_log "action=samba-apply result=blocked reason=testparm_failed"
+    fail "Samba hat die neue Konfiguration abgelehnt. Die aktive Konfiguration blieb unverändert." 78
+  fi
+
+  if [[ -z "$(samba_share_names "$SAMBA_CANDIDATE_CONFIG")" ]]; then
+    rm -f "$SAMBA_CANDIDATE_CONFIG"
+    write_samba_block 0 || fail "Die Datei smb-extra.conf konnte nicht aktualisiert werden." 74
+    rm -f "$SAMBA_ACTIVE_CONFIG"
+    if ((${#previous_shares[@]} > 0)); then
+      reload_samba "${previous_shares[@]}" || fail "Samba konnte nicht neu geladen werden." 74
+    fi
+    write_log "action=samba-apply shares=0 result=success"
+    return 0
+  fi
+
+  mv -f "$SAMBA_CANDIDATE_CONFIG" "$SAMBA_ACTIVE_CONFIG" \
+    || fail "Die Samba-Konfiguration konnte nicht aktiviert werden." 74
+  write_samba_block 1 || fail "Die Datei smb-extra.conf konnte nicht aktualisiert werden." 74
+  reload_samba "${previous_shares[@]}" || fail "Samba konnte nicht neu geladen werden." 74
+  write_log "action=samba-apply shares=$(samba_share_names "$SAMBA_ACTIVE_CONFIG" | wc -l) result=success"
+}
+
+remove_samba_config() {
+  local -a previous_shares
+  exec 7>"$SAMBA_LOCK_FILE"
+  flock -w 30 7 || fail "Eine andere Samba-Aktualisierung läuft bereits." 75
+  mapfile -t previous_shares < <(samba_share_names "$SAMBA_ACTIVE_CONFIG")
+  write_samba_block 0 || fail "Die Datei smb-extra.conf konnte nicht aktualisiert werden." 74
+  rm -f "$SAMBA_ACTIVE_CONFIG" "$SAMBA_CANDIDATE_CONFIG"
+  if ((${#previous_shares[@]} > 0)); then
+    reload_samba "${previous_shares[@]}" || fail "Samba konnte nicht neu geladen werden." 74
+  fi
+  write_log "action=samba-remove result=success"
 }
 
 refresh_cron() {
@@ -363,12 +479,26 @@ main() {
     refresh_cron
     return 0
   fi
+  if [[ "$command" == "apply-samba-config" ]]; then
+    [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager apply-samba-config" 64
+    apply_samba_config
+    return 0
+  fi
+  if [[ "$command" == "remove-samba-config" ]]; then
+    [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager remove-samba-config" 64
+    remove_samba_config
+    return 0
+  fi
 
   zfs_bin="$(find_zfs)"
   case "$command" in
     list-datasets)
       [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-datasets" 64
       list_datasets "$zfs_bin"
+      ;;
+    list-filesystems)
+      [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-filesystems" 64
+      list_filesystems "$zfs_bin"
       ;;
     list-snapshots)
       [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-snapshots" 64

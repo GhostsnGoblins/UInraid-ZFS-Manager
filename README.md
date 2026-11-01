@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.6.1
+## Funktionsumfang 0.7.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -20,10 +20,11 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - fremde Snapshots nach Eingabe ihres vollständigen Namens löschen
 - Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
+- pro Dataset eine private, schreibgeschützte Snapshot-Freigabe für ausgewählte Benutzer einrichten
 - Unraid-Array-Zustand verständlich anzeigen
 - Daten nach dem Array-Start manuell aktualisieren
 
-Diese Version verändert keine Samba-, Docker- oder VM-Konfiguration. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
+Diese Version verändert keine Docker- oder VM-Konfiguration. Samba wird nur für eingerichtete Snapshot-Freigaben ergänzt, normale Unraid-Freigaben bleiben unverändert. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
 
 Für die Ablaufberechnung entspricht ein Monat genau 30 Tagen. Änderungen an Rhythmus und Aufbewahrung behalten die stabile ID der Regel bei. Dadurch bleiben bereits erstellte automatische Snapshots derselben Regel zugeordnet.
 
@@ -31,9 +32,20 @@ Beim Ausschalten verschwindet der Hauptreiter nach dem Neuladen der WebGUI. Das 
 
 Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie die ZFS-Benutzereigenschaft `org.unraidzfsmanager:kind=manual`. Automatische Snapshots enthalten zusätzlich die stabile ID ihrer Regel im Namen und in `org.unraidzfsmanager:policy`. Die automatische Bereinigung verlangt alle Kennzeichen in exakter Übereinstimmung. Manuelle und fremde Snapshots werden nicht erfasst.
 
+## Snapshot-Freigaben
+
+Pro Dataset lässt sich eine SMB-Freigabe einrichten, zum Beispiel `\\Tower\data-snapshots` für `disk1/data`. Jeder Snapshot erscheint dort automatisch als Ordner, auch manuelle und fremde. Neue Snapshots sind sofort sichtbar, gelöschte verschwinden sofort.
+
+- Die Freigabe ist immer privat und schreibgeschützt.
+- Mindestens ein Unraid-Benutzer mit Passwort muss ausgewählt werden. `root` und Konten ohne Passwort sind ausgeschlossen.
+- Die Rechte der normalen Freigabe werden nicht übernommen. Wer Zugriff erhält, kann auch inzwischen gelöschte Dateien lesen.
+- Unter-Datasets sind nicht enthalten und brauchen eine eigene Freigabe.
+- Symlinks, die aus der Freigabe hinausführen, werden nicht verfolgt.
+- Die Konfiguration liegt in `/boot/config/plugins/zfs.snapshot.manager/smb-snapshots.conf` und wird über einen markierten Block in `/boot/config/smb-extra.conf` eingebunden. Ohne Freigaben, beim Deaktivieren und beim Entfernen des Plugins wird der Block wieder entfernt.
+
 ## Windows-Vorgängerversionen
 
-Die erstellten ZFS-Snapshots werden noch nicht als Windows-Vorgängerversionen veröffentlicht. Dafür muss eine SMB-Freigabe über Sambas `shadow_copy2` eindeutig einem ZFS-Dataset und dessen `.zfs/snapshot`-Verzeichnis zugeordnet werden. Unraid-User-Shares unter `/mnt/user` können Daten mehrerer Datenträger zusammenführen und dürfen deshalb nicht automatisch wie ein einzelnes Dataset behandelt werden. Version 0.6.1 verändert keine Samba-Konfiguration. Siehe die [offizielle Samba-Dokumentation zu `vfs_shadow_copy2`](https://www.samba.org/samba/samba/docs/man/manpages/vfs_shadow_copy2.8.html).
+Die erstellten ZFS-Snapshots werden noch nicht als Windows-Vorgängerversionen veröffentlicht. Dafür muss eine SMB-Freigabe über Sambas `shadow_copy2` eindeutig einem ZFS-Dataset und dessen `.zfs/snapshot`-Verzeichnis zugeordnet werden. Unraid-User-Shares unter `/mnt/user` können Daten mehrerer Datenträger zusammenführen und dürfen deshalb nicht automatisch wie ein einzelnes Dataset behandelt werden. Die Snapshot-Freigaben sind davon unabhängig. Siehe die [offizielle Samba-Dokumentation zu `vfs_shadow_copy2`](https://www.samba.org/samba/samba/docs/man/manpages/vfs_shadow_copy2.8.html).
 
 ## Voraussetzungen
 
@@ -52,7 +64,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.6.1-noarch-1.txz`
+- `zfs.snapshot.manager-0.7.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren

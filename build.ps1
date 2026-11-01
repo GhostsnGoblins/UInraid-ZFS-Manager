@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.6.1',
+    [string]$Version = '0.7.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds one private, read-only SMB snapshot share per dataset with explicit users
+- Shows every snapshot of the dataset automatically and leaves normal Unraid shares unchanged
 - Prevents scheduled snapshots from failing when the 15-minute cleanup starts at the same time
 - Lets scheduled snapshot runs wait up to 60 seconds for the shared ZFS action lock
 - Adds optional recursive snapshots for a dataset and all child datasets
@@ -142,10 +144,15 @@ find /usr/local/emhttp/plugins/zfs.snapshot.manager -type f -exec chmod 644 {} \
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-shares.php
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/event/started
 
 if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php; then
   echo "Warning: Unraid cron entries could not be refreshed. They will be retried after the array starts."
+fi
+
+if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-shares.php; then
+  echo "Warning: Snapshot shares could not be refreshed. They will be retried after the array starts."
 fi
 
 echo "ZFS Snapshot Manager $Version installed."
@@ -156,6 +163,7 @@ echo "Manage snapshots from the top-level Snapshots tab."
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
+/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager remove-samba-config || echo "Warning: Snapshot shares could not be removed from Samba."
 removepkg zfs.snapshot.manager-$Version-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
@@ -163,6 +171,8 @@ rm -f /var/log/zfs.snapshot.manager.log
 rm -f /var/run/zfs.snapshot.manager.lock
 rm -f /var/run/zfs.snapshot.manager.cron.lock
 rm -f /var/run/zfs.snapshot.manager.policies.lock
+rm -f /var/run/zfs.snapshot.manager.shares.lock
+rm -f /var/run/zfs.snapshot.manager.samba.lock
 if [[ -x /usr/local/sbin/update_cron ]]; then
   /usr/local/sbin/update_cron || true
 fi
@@ -188,10 +198,12 @@ $requiredEntries = @(
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/action.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/lib.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/policies.php',
+    './usr/local/emhttp/plugins/zfs.snapshot.manager/include/shares.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/settings.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php',
+    './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-shares.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/event/started',
     './install/slack-desc'
 )
