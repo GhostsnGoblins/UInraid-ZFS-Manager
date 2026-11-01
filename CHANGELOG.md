@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- pro Dataset eine automatische Snapshot-Regel mit stabiler ID ergänzen
+- stündliche, tägliche und wöchentliche Zeitpläne mit auswählbarem Zeitpunkt ergänzen
+- altersbasierte Aufbewahrung in Stunden, Tagen, Wochen oder Monaten ergänzen
+- Ablaufprüfung alle 15 Minuten über Unraid `update_cron` einrichten
+- automatische Snapshots doppelt über Name und lokale ZFS-Regel-Eigenschaft absichern
+- Regelbearbeitung ohne Änderung der stabilen ID ermöglichen
+- sofortige Ausführung und nicht destruktive Löschvorschau ergänzen
+- Cron-Einträge bei Installation, Ein/Aus-Umschaltung und Array-Start aktualisieren
+
 ## 0.4.0
 
 - kontrolliertes Löschen fremder Snapshots ergänzen

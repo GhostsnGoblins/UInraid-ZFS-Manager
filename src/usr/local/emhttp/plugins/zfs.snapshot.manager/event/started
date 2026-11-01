@@ -1,0 +1,4 @@
+#!/bin/bash
+
+/usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php >/dev/null 2>&1 \
+  || logger -t zfs.snapshot.manager -- 'Cron-Zeitpläne konnten nach dem Array-Start nicht aktualisiert werden.'

@@ -2,13 +2,18 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.4.0
+## Funktionsumfang 0.5.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
 - ZFS-Dateisysteme und ZVOLs auflisten
 - vorhandene ZFS-Snapshots auflisten
 - einen manuellen Snapshot für ein ausgewähltes Dataset erstellen
+- pro Dataset einen automatischen Zeitplan einrichten
+- stündliche, tägliche oder wöchentliche Ausführung mit auswählbarer Minute, Uhrzeit und Wochentag
+- automatische Snapshots für eine frei wählbare Anzahl Stunden, Tage, Wochen oder Monate aufbewahren
+- abgelaufene automatische Snapshots spätestens bei der nächsten 15-Minuten-Prüfung entfernen
+- einen Zeitplan sofort ausführen und die aktuell fälligen Löschungen vorher anzeigen
 - ausschließlich eindeutig gekennzeichnete manuelle Plugin-Snapshots löschen
 - fremde Snapshots nach Eingabe ihres vollständigen Namens löschen
 - Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
@@ -16,11 +21,13 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - Unraid-Array-Zustand verständlich anzeigen
 - Daten nach dem Array-Start manuell aktualisieren
 
-Diese Version richtet keine Zeitpläne ein und verändert keine Samba-, Docker- oder VM-Konfiguration. Das Löschen verwendet keine rekursiven oder erzwungenen ZFS-Optionen.
+Diese Version verändert keine Samba-, Docker- oder VM-Konfiguration. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
+
+Für die Ablaufberechnung entspricht ein Monat genau 30 Tagen. Änderungen an Rhythmus und Aufbewahrung behalten die stabile ID der Regel bei. Dadurch bleiben bereits erstellte automatische Snapshots derselben Regel zugeordnet.
 
 Beim Ausschalten verschwindet der Hauptreiter nach dem Neuladen der WebGUI. Das Backend verweigert dann neue Snapshot-Aktionen. Bereits vorhandene ZFS-Snapshots werden weder gelöscht noch verändert.
 
-Neu erstellte Snapshots erhalten automatisch einen Namen wie `uzm_manual_20261101T120000Z` sowie die ZFS-Benutzereigenschaft `org.unraidzfsmanager:kind=manual`. Diese Kennzeichnung ist für spätere, sichere Aufbewahrungsregeln vorgesehen. Manuelle Snapshots dürfen von einer späteren automatischen Bereinigung nicht erfasst werden.
+Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie die ZFS-Benutzereigenschaft `org.unraidzfsmanager:kind=manual`. Automatische Snapshots enthalten zusätzlich die stabile ID ihrer Regel im Namen und in `org.unraidzfsmanager:policy`. Die automatische Bereinigung verlangt alle Kennzeichen in exakter Übereinstimmung. Manuelle und fremde Snapshots werden nicht erfasst.
 
 ## Voraussetzungen
 
@@ -39,7 +46,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.4.0-noarch-1.txz`
+- `zfs.snapshot.manager-0.5.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -88,6 +95,8 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 | `/boot/config/plugins/zfs.snapshot.manager.plg` | Plugin-Manifest | Ja |
 | `/boot/config/plugins/zfs.snapshot.manager/packages/` | heruntergeladenes, geprüftes Plugin-Paket | Ja |
 | `/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg` | Aktivierungszustand | Ja |
+| `/boot/config/plugins/zfs.snapshot.manager/policies.json` | Zeitpläne und Aufbewahrungsdauer | Ja |
+| `/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron` | von Unraid eingelesene Cron-Zeitpläne | Ja |
 | `/usr/local/emhttp/plugins/zfs.snapshot.manager/` | WebGUI und Backend | Nein, wird beim Start erneut installiert |
 | `/var/log/zfs.snapshot.manager.log` | Laufzeitprotokoll | Nein |
 | `/var/run/zfs.snapshot.manager.lock` | Sperre gegen parallele Schreibvorgänge | Nein |
@@ -101,9 +110,12 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Die Oberfläche sendet den von Unraid bereitgestellten CSRF-Token mit.
 - Der Aktivierungszustand wird serverseitig geprüft. Ein ausgeblendeter Reiter allein gilt nicht als Schutz.
 - Eigene Plugin-Snapshots werden über Namensschema und lokal gesetzte Plugin-Eigenschaft erkannt.
+- Automatische Löschungen verlangen zusätzlich die exakte stabile Regel-ID im Namen und in einer zweiten lokal gesetzten ZFS-Eigenschaft.
+- Die nicht destruktive Löschvorschau zeigt nur bereits abgelaufene Snapshots derselben Regel.
+- Cron ruft nur die stabile Regel-ID auf. Dataset und Aufbewahrungsdauer werden bei jedem Lauf erneut aus der serverseitigen Konfiguration gelesen.
 - Fremde Snapshots erfordern die exakte Eingabe ihres vollständigen Namens in Oberfläche und Backend.
 - Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
-- Es existiert kein Rollback-, Clone-, Mount- oder Retention-Endpunkt.
+- Es existiert kein Rollback-, Clone- oder Mount-Endpunkt.
 
 ## Noch offen
 

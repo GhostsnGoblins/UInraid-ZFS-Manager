@@ -27,7 +27,7 @@ if (!is_string($action) || !in_array($action, ['create', 'delete', 'delete-exter
 
 if ($action === 'create') {
     $dataset = $_POST['dataset'] ?? '';
-    if (!is_string($dataset) || strlen($dataset) > 255 || !preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:-]*(\/[A-Za-z0-9][A-Za-z0-9_.:-]*)*$/D', $dataset)) {
+    if (!is_string($dataset) || !zsm_is_valid_dataset($dataset)) {
         respond(400, ['ok' => false, 'message' => 'Ungültiger Dataset-Name.']);
     }
 
@@ -50,7 +50,7 @@ if (!is_string($snapshot) || strlen($snapshot) > 320 || !preg_match('/^[A-Za-z0-
 }
 
 if ($action === 'delete') {
-    if (!preg_match('/@uzm_manual_[0-9]{8}T[0-9]{6}Z$/D', $snapshot)) {
+    if (!preg_match('/@(?:uzm_manual_[0-9]{8}T[0-9]{6}Z|uzm_auto_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}Z)$/D', $snapshot)) {
         respond(400, ['ok' => false, 'message' => 'Nur eindeutig benannte Plugin-Snapshots dürfen über diese Aktion gelöscht werden.']);
     }
     $arguments = ['delete', $snapshot];

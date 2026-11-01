@@ -6,7 +6,8 @@ export LC_ALL=C
 readonly PLUGIN_NAME="zfs.snapshot.manager"
 readonly LOG_FILE="${ZSM_LOG_FILE:-/var/log/${PLUGIN_NAME}.log}"
 readonly LOCK_FILE="${ZSM_LOCK_FILE:-/var/run/${PLUGIN_NAME}.lock}"
-readonly SNAPSHOT_PROPERTY="org.unraidzfsmanager:kind"
+readonly SNAPSHOT_KIND_PROPERTY="org.unraidzfsmanager:kind"
+readonly SNAPSHOT_POLICY_PROPERTY="org.unraidzfsmanager:policy"
 
 fail() {
   printf 'Fehler: %s\n' "$1" >&2
@@ -29,7 +30,6 @@ is_valid_dataset() {
 is_valid_snapshot() {
   local snapshot="$1"
   local dataset snapshot_name
-
   [[ ${#snapshot} -le 320 && "$snapshot" == *@* ]] || return 1
   dataset="${snapshot%@*}"
   snapshot_name="${snapshot##*@}"
@@ -37,20 +37,27 @@ is_valid_snapshot() {
   [[ "$snapshot_name" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]]
 }
 
+is_valid_policy_id() {
+  [[ "$1" =~ ^[a-f0-9]{32}$ ]]
+}
+
+is_valid_retention_seconds() {
+  [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 3600 && 10#$1 <= 3153600000 ))
+}
+
 is_plugin_snapshot() {
   local snapshot="$1"
   local snapshot_name
-
   is_valid_snapshot "$snapshot" || return 1
   snapshot_name="${snapshot##*@}"
-  [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]
+  [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ \
+    || "$snapshot_name" =~ ^uzm_auto_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}Z$ ]]
 }
 
 write_log() {
   local message="$1"
   local timestamp
   timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-
   umask 077
   printf '%s %s\n' "$timestamp" "$message" >> "$LOG_FILE" 2>/dev/null || true
   if command -v logger >/dev/null 2>&1; then
@@ -67,37 +74,7 @@ list_datasets() {
 list_snapshots() {
   local zfs_bin="$1"
   "$zfs_bin" list -H -p -t snapshot \
-    -o name,creation,used,referenced,clones,"$SNAPSHOT_PROPERTY" -s creation
-}
-
-create_snapshot() {
-  local zfs_bin="$1"
-  local dataset="$2"
-  local timestamp snapshot
-
-  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
-
-  exec 9>"$LOCK_FILE"
-  flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
-
-  "$zfs_bin" list -H -o name "$dataset" >/dev/null 2>&1 \
-    || fail "Das Dataset existiert nicht oder ist nicht zugänglich." 66
-
-  timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
-  snapshot="${dataset}@uzm_manual_${timestamp}"
-
-  if "$zfs_bin" list -H -t snapshot -o name "$snapshot" >/dev/null 2>&1; then
-    fail "Für diese Sekunde existiert bereits ein Plugin-Snapshot." 73
-  fi
-
-  if "$zfs_bin" snapshot -o "${SNAPSHOT_PROPERTY}=manual" "$snapshot"; then
-    write_log "action=create dataset=${dataset} snapshot=${snapshot} result=success"
-    printf '%s\n' "$snapshot"
-    return 0
-  fi
-
-  write_log "action=create dataset=${dataset} snapshot=${snapshot} result=failed"
-  fail "ZFS konnte den Snapshot nicht erstellen." 74
+    -o name,creation,used,referenced,clones,"$SNAPSHOT_KIND_PROPERTY" -s creation
 }
 
 lock_snapshot_action() {
@@ -105,12 +82,40 @@ lock_snapshot_action() {
   flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
 }
 
+require_dataset_exists() {
+  local zfs_bin="$1"
+  local dataset="$2"
+  "$zfs_bin" list -H -o name "$dataset" >/dev/null 2>&1 \
+    || fail "Das Dataset existiert nicht oder ist nicht zugänglich." 66
+}
+
+create_snapshot() {
+  local zfs_bin="$1"
+  local dataset="$2"
+  local timestamp snapshot
+  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
+  lock_snapshot_action
+  require_dataset_exists "$zfs_bin" "$dataset"
+  timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+  snapshot="${dataset}@uzm_manual_${timestamp}"
+
+  if "$zfs_bin" list -H -t snapshot -o name "$snapshot" >/dev/null 2>&1; then
+    fail "Für diese Sekunde existiert bereits ein Plugin-Snapshot." 73
+  fi
+  if "$zfs_bin" snapshot -o "${SNAPSHOT_KIND_PROPERTY}=manual" "$snapshot"; then
+    write_log "action=create dataset=${dataset} snapshot=${snapshot} result=success"
+    printf '%s\n' "$snapshot"
+    return 0
+  fi
+  write_log "action=create dataset=${dataset} snapshot=${snapshot} result=failed"
+  fail "ZFS konnte den Snapshot nicht erstellen." 74
+}
+
 require_snapshot_exists() {
   local zfs_bin="$1"
   local snapshot="$2"
   local mode="$3"
   local existing
-
   if ! existing="$("$zfs_bin" list -H -t snapshot -o name "$snapshot" 2>/dev/null)" \
       || [[ "$existing" != "$snapshot" ]]; then
     write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=not_found"
@@ -123,7 +128,6 @@ require_no_snapshot_dependencies() {
   local snapshot="$2"
   local mode="$3"
   local clones holds
-
   if ! clones="$("$zfs_bin" get -H -o value clones "$snapshot" 2>/dev/null)"; then
     write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=clone_check_failed"
     fail "Abhängige Klone konnten nicht sicher geprüft werden." 78
@@ -132,7 +136,6 @@ require_no_snapshot_dependencies() {
     write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=clones_present"
     fail "Der Snapshot besitzt abhängige Klone und wurde nicht gelöscht." 78
   fi
-
   if ! holds="$("$zfs_bin" holds -H "$snapshot" 2>/dev/null)"; then
     write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=hold_check_failed"
     fail "ZFS-Holds konnten nicht sicher geprüft werden." 79
@@ -143,17 +146,37 @@ require_no_snapshot_dependencies() {
   fi
 }
 
+verify_plugin_snapshot_ownership() {
+  local zfs_bin="$1"
+  local snapshot="$2"
+  local snapshot_name ownership policy_id policy_ownership
+  snapshot_name="${snapshot##*@}"
+
+  if [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]; then
+    ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$snapshot" 2>/dev/null)" \
+      && [[ "$ownership" == $'manual\tlocal' ]]
+    return
+  fi
+
+  if [[ "$snapshot_name" =~ ^uzm_auto_([a-f0-9]{32})_[0-9]{8}T[0-9]{6}Z$ ]]; then
+    policy_id="${BASH_REMATCH[1]}"
+    ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$snapshot" 2>/dev/null)" \
+      && policy_ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_POLICY_PROPERTY" "$snapshot" 2>/dev/null)" \
+      && [[ "$ownership" == $'automatic\tlocal' && "$policy_ownership" == "${policy_id}"$'\tlocal' ]]
+    return
+  fi
+  return 1
+}
+
 destroy_checked_snapshot() {
   local zfs_bin="$1"
   local snapshot="$2"
   local mode="$3"
-
   if "$zfs_bin" destroy "$snapshot"; then
     write_log "action=delete mode=${mode} snapshot=${snapshot} result=success"
     printf '%s\n' "$snapshot"
     return 0
   fi
-
   write_log "action=delete mode=${mode} snapshot=${snapshot} result=failed reason=zfs_destroy_failed"
   fail "ZFS konnte den Snapshot nicht löschen." 74
 }
@@ -161,20 +184,14 @@ destroy_checked_snapshot() {
 delete_plugin_snapshot() {
   local zfs_bin="$1"
   local snapshot="$2"
-  local ownership
-
   is_plugin_snapshot "$snapshot" \
     || fail "Nur eindeutig benannte Plugin-Snapshots dürfen über diese Aktion gelöscht werden." 64
-
   lock_snapshot_action
   require_snapshot_exists "$zfs_bin" "$snapshot" "plugin"
-
-  if ! ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_PROPERTY" "$snapshot" 2>/dev/null)" \
-      || [[ "$ownership" != $'manual\tlocal' ]]; then
+  if ! verify_plugin_snapshot_ownership "$zfs_bin" "$snapshot"; then
     write_log "action=delete mode=plugin snapshot=${snapshot} result=blocked reason=not_plugin_owned"
-    fail "Der Snapshot wurde nicht eindeutig als manueller Plugin-Snapshot erkannt." 77
+    fail "Der Snapshot wurde nicht eindeutig als Plugin-Snapshot erkannt." 77
   fi
-
   require_no_snapshot_dependencies "$zfs_bin" "$snapshot" "plugin"
   destroy_checked_snapshot "$zfs_bin" "$snapshot" "plugin"
 }
@@ -183,22 +200,116 @@ delete_external_snapshot() {
   local zfs_bin="$1"
   local snapshot="$2"
   local confirmation="$3"
-
   is_valid_snapshot "$snapshot" || fail "Ungültiger Snapshot-Name." 64
   [[ "$confirmation" == "$snapshot" ]] \
     || fail "Der eingegebene Snapshot-Name stimmt nicht exakt überein." 64
-
   lock_snapshot_action
   require_snapshot_exists "$zfs_bin" "$snapshot" "external"
   require_no_snapshot_dependencies "$zfs_bin" "$snapshot" "external"
   destroy_checked_snapshot "$zfs_bin" "$snapshot" "external"
 }
 
+list_owned_policy_snapshots() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local name creation kind policy snapshot_name ownership policy_ownership
+
+  while IFS=$'\t' read -r name creation kind policy; do
+    [[ "${name%@*}" == "$dataset" ]] || continue
+    snapshot_name="${name##*@}"
+    [[ "$snapshot_name" =~ ^uzm_auto_${policy_id}_[0-9]{8}T[0-9]{6}Z$ ]] || continue
+    [[ "$kind" == "automatic" && "$policy" == "$policy_id" ]] || continue
+    ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$name" 2>/dev/null)" || continue
+    policy_ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_POLICY_PROPERTY" "$name" 2>/dev/null)" || continue
+    [[ "$ownership" == $'automatic\tlocal' && "$policy_ownership" == "${policy_id}"$'\tlocal' ]] || continue
+    printf '%s\t%s\n' "$name" "$creation"
+  done < <("$zfs_bin" list -H -p -t snapshot \
+    -o name,creation,"$SNAPSHOT_KIND_PROPERTY","$SNAPSHOT_POLICY_PROPERTY" -s creation)
+}
+
+preview_policy() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local retention_seconds="$4"
+  local cutoff name creation
+  is_valid_policy_id "$policy_id" || fail "Ungültige Zeitplan-ID." 64
+  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
+  is_valid_retention_seconds "$retention_seconds" || fail "Ungültige Aufbewahrungsdauer." 64
+  cutoff=$(( $(date -u '+%s') - 10#$retention_seconds ))
+  while IFS=$'\t' read -r name creation; do
+    [[ "$creation" =~ ^[0-9]+$ ]] || continue
+    (( 10#$creation <= cutoff )) && printf '%s\n' "$name"
+  done < <(list_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset")
+}
+
+cleanup_owned_policy_snapshots() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local retention_seconds="$4"
+  local cutoff name creation
+  cutoff=$(( $(date -u '+%s') - 10#$retention_seconds ))
+  while IFS=$'\t' read -r name creation; do
+    [[ "$creation" =~ ^[0-9]+$ ]] || continue
+    (( 10#$creation <= cutoff )) || continue
+    require_snapshot_exists "$zfs_bin" "$name" "retention"
+    if ! verify_plugin_snapshot_ownership "$zfs_bin" "$name"; then
+      write_log "action=delete mode=retention policy=${policy_id} snapshot=${name} result=blocked reason=not_plugin_owned"
+      fail "Ein abgelaufener Snapshot konnte nicht eindeutig der Regel zugeordnet werden." 77
+    fi
+    require_no_snapshot_dependencies "$zfs_bin" "$name" "retention"
+    destroy_checked_snapshot "$zfs_bin" "$name" "retention"
+  done < <(list_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset")
+}
+
+cleanup_policy() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local retention_seconds="$4"
+  is_valid_policy_id "$policy_id" || fail "Ungültige Zeitplan-ID." 64
+  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
+  is_valid_retention_seconds "$retention_seconds" || fail "Ungültige Aufbewahrungsdauer." 64
+  lock_snapshot_action
+  require_dataset_exists "$zfs_bin" "$dataset"
+  cleanup_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset" "$retention_seconds"
+}
+
+run_policy() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local retention_seconds="$4"
+  local timestamp snapshot
+  is_valid_policy_id "$policy_id" || fail "Ungültige Zeitplan-ID." 64
+  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
+  is_valid_retention_seconds "$retention_seconds" || fail "Ungültige Aufbewahrungsdauer." 64
+  lock_snapshot_action
+  require_dataset_exists "$zfs_bin" "$dataset"
+  timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+  snapshot="${dataset}@uzm_auto_${policy_id}_${timestamp}"
+
+  if "$zfs_bin" list -H -t snapshot -o name "$snapshot" >/dev/null 2>&1; then
+    fail "Für diese Sekunde existiert bereits ein automatischer Snapshot." 73
+  fi
+  if ! "$zfs_bin" snapshot \
+      -o "${SNAPSHOT_KIND_PROPERTY}=automatic" \
+      -o "${SNAPSHOT_POLICY_PROPERTY}=${policy_id}" \
+      "$snapshot"; then
+    write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} snapshot=${snapshot} result=failed"
+    fail "ZFS konnte den automatischen Snapshot nicht erstellen." 74
+  fi
+  write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} snapshot=${snapshot} result=success"
+  printf '%s\n' "$snapshot"
+  cleanup_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset" "$retention_seconds"
+}
+
 main() {
   local command="${1:-}"
   local zfs_bin
   zfs_bin="$(find_zfs)"
-
   case "$command" in
     list-datasets)
       [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-datasets" 64
@@ -220,11 +331,22 @@ main() {
       [[ $# -eq 3 ]] || fail "Aufruf: zfs-manager delete-external SNAPSHOT BESTÄTIGUNG" 64
       delete_external_snapshot "$zfs_bin" "$2" "$3"
       ;;
+    run-policy)
+      [[ $# -eq 4 ]] || fail "Aufruf: zfs-manager run-policy ID DATASET SEKUNDEN" 64
+      run_policy "$zfs_bin" "$2" "$3" "$4"
+      ;;
+    cleanup-policy)
+      [[ $# -eq 4 ]] || fail "Aufruf: zfs-manager cleanup-policy ID DATASET SEKUNDEN" 64
+      cleanup_policy "$zfs_bin" "$2" "$3" "$4"
+      ;;
+    preview-policy)
+      [[ $# -eq 4 ]] || fail "Aufruf: zfs-manager preview-policy ID DATASET SEKUNDEN" 64
+      preview_policy "$zfs_bin" "$2" "$3" "$4"
+      ;;
     *)
-      fail "Unbekannter Befehl. Erlaubt: list-datasets, list-snapshots, create, delete, delete-external." 64
+      fail "Unbekannter Befehl." 64
       ;;
   esac
 }
 
 main "$@"
-

@@ -9,6 +9,7 @@ trap 'rm -rf "$test_root"' EXIT
 
 mkdir -p "$test_root/bin"
 mock_log="$test_root/zfs-arguments.log"
+policy_id="0123456789abcdef0123456789abcdef"
 
 cat > "$test_root/bin/zfs" <<'MOCK'
 #!/bin/bash
@@ -28,9 +29,16 @@ fi
 if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:kind"* ]]; then
   if [[ "$target" == 'tank/data@uzm_manual_20250102T000000Z' ]]; then
     printf 'external\tlocal\n'
+  elif [[ "$target" == tank/data@uzm_auto_* ]]; then
+    printf 'automatic\tlocal\n'
   else
     printf 'manual\tlocal\n'
   fi
+  exit 0
+fi
+
+if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
+  printf '0123456789abcdef0123456789abcdef\tlocal\n'
   exit 0
 fi
 
@@ -52,12 +60,20 @@ fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* && "$*" == *"-o name "* ]]; then
   case "$target" in
-    tank/data@uzm_manual_2025010[1-5]T000000Z|media@auto-2026-10-10_00-00)
+    tank/data@uzm_manual_2025010[1-5]T000000Z|tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z|media@auto-2026-10-10_00-00)
       printf '%s\n' "$target"
       exit 0
       ;;
   esac
   exit 1
+fi
+
+if [[ "${1:-}" == "list" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735689600\tautomatic\t0123456789abcdef0123456789abcdef\n'
+  printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\tmanual\t-\n'
+  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735689600\tautomatic\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+  printf 'media@auto-2026-10-10_00-00\t1735689600\t-\t-\n'
+  exit 0
 fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* ]]; then
@@ -126,7 +142,7 @@ foreign_output="$("$backend" delete 'tank/data@uzm_manual_20250102T000000Z' 2>&1
 foreign_status=$?
 set -e
 [[ $foreign_status -eq 77 ]]
-[[ "$foreign_output" == *"nicht eindeutig als manueller Plugin-Snapshot"* ]]
+[[ "$foreign_output" == *"nicht eindeutig als Plugin-Snapshot"* ]]
 ! grep -Fq 'destroy tank/data@uzm_manual_20250102T000000Z' "$mock_log"
 grep -Fq 'action=delete mode=plugin snapshot=tank/data@uzm_manual_20250102T000000Z result=blocked reason=not_plugin_owned' "$test_root/plugin.log"
 
@@ -184,5 +200,18 @@ deleted_external="$("$backend" delete-external "$external_snapshot" "$external_s
 [[ "$deleted_external" == "$external_snapshot" ]]
 grep -Fq 'destroy media@auto-2026-10-10_00-00' "$mock_log"
 grep -Fq 'action=delete mode=external snapshot=media@auto-2026-10-10_00-00 result=success' "$test_root/plugin.log"
+
+preview_output="$("$backend" preview-policy "$policy_id" 'tank/data' '3600')"
+[[ "$preview_output" == 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' ]]
+! grep -Fq 'destroy tank/data@uzm_manual_20250101T000000Z' "$mock_log" || true
+
+policy_output="$("$backend" run-policy "$policy_id" 'tank/data' '3600')"
+policy_snapshot="$(printf '%s\n' "$policy_output" | head -n 1)"
+[[ "$policy_snapshot" =~ ^tank/data@uzm_auto_0123456789abcdef0123456789abcdef_[0-9]{8}T[0-9]{6}Z$ ]]
+grep -Fq 'snapshot -o org.unraidzfsmanager:kind=automatic -o org.unraidzfsmanager:policy=0123456789abcdef0123456789abcdef tank/data@uzm_auto_' "$mock_log"
+grep -Fq 'destroy tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' "$mock_log"
+! grep -Fq 'destroy tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z' "$mock_log"
+grep -Fq 'action=create mode=automatic policy=0123456789abcdef0123456789abcdef dataset=tank/data' "$test_root/plugin.log"
+grep -Fq 'action=delete mode=retention snapshot=tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z result=success' "$test_root/plugin.log"
 
 printf 'Backend-Tests erfolgreich.\n'

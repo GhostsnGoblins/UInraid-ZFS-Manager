@@ -1,29 +1,27 @@
-<?xml version='1.0' standalone='yes'?>
+﻿<?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN [
 <!ENTITY name "zfs.snapshot.manager">
 <!ENTITY author "Claudio">
-<!ENTITY version "0.4.0">
+<!ENTITY version "0.5.0">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg">
-<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.4.0-noarch-1.txz">
-<!ENTITY packageSHA256 "6cd760018f3dde66ab7fadae252bbfd307c7015b7846e96f59e6759e2af8b0b7">
+<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.5.0-noarch-1.txz">
+<!ENTITY packageSHA256 "46205d2102c4bcc85cd7edd8c0b4583721e04f651c449e88fc9dafd1850f16e4">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### 0.4.0
+### 0.5.0
 
-- Adds typed-name confirmation for snapshots created outside this plugin
-- Adds guarded deletion for manual snapshots created by this plugin
-- Blocks deletion when clones or ZFS holds exist
-- Declares update metadata as canonical PLG entities
-- Uses GitHub as the public Unraid update channel
-- Uses the native Unraid settings form layout
-- Adds a top-level Snapshots tab beside Docker and VMs
-- Keeps only the enable/disable switch under Settings
-- Blocks write actions while the plugin is disabled
-- Preserves all existing snapshots when disabled
+- Adds one automatic snapshot rule per selected dataset
+- Supports hourly, daily, and weekly schedules with selectable time
+- Supports age-based retention in hours, days, weeks, or months
+- Runs expiration checks every 15 minutes while the plugin is enabled
+- Deletes only automatic snapshots with matching name and local ZFS ownership properties
+- Adds run-now and non-destructive deletion preview actions
+- Keeps manual and foreign snapshots outside automatic cleanup
+- Restores Unraid cron entries after installation and array start
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.4.0-noarch-1.txz">
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.5.0-noarch-1.txz">
 <URL>&packageURL;</URL>
 <SHA256>&packageSHA256;</SHA256>
 </FILE>
@@ -32,8 +30,8 @@
 <INLINE><![CDATA[
 set -euo pipefail
 
-PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.4.0-noarch-1.txz"
-EXPECTED_SHA256="6cd760018f3dde66ab7fadae252bbfd307c7015b7846e96f59e6759e2af8b0b7"
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.5.0-noarch-1.txz"
+EXPECTED_SHA256="46205d2102c4bcc85cd7edd8c0b4583721e04f651c449e88fc9dafd1850f16e4"
 
 if [[ ! -f "$PACKAGE" ]]; then
   echo "Missing local test package: $PACKAGE"
@@ -47,7 +45,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 /sbin/upgradepkg --install-new --reinstall "$PACKAGE"
-find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.4.0-noarch-1.txz' -delete
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.5.0-noarch-1.txz' -delete
 
 CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -55,12 +53,25 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 chmod 644 "$CONFIG_FILE"
 
+POLICIES_FILE="/boot/config/plugins/zfs.snapshot.manager/policies.json"
+if [[ ! -f "$POLICIES_FILE" ]]; then
+  printf '[]\n' > "$POLICIES_FILE"
+fi
+chmod 600 "$POLICIES_FILE"
+
 chown -R root:root /usr/local/emhttp/plugins/zfs.snapshot.manager
 find /usr/local/emhttp/plugins/zfs.snapshot.manager -type d -exec chmod 755 {} \;
 find /usr/local/emhttp/plugins/zfs.snapshot.manager -type f -exec chmod 644 {} \;
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/event/started
 
-echo "ZFS Snapshot Manager 0.4.0 installed."
+if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php; then
+  echo "Warning: Unraid cron entries could not be refreshed. They will be retried after the array starts."
+fi
+
+echo "ZFS Snapshot Manager 0.5.0 installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>
@@ -68,11 +79,15 @@ echo "Manage snapshots from the top-level Snapshots tab."
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
-removepkg zfs.snapshot.manager-0.4.0-noarch-1 2>/dev/null || true
+removepkg zfs.snapshot.manager-0.5.0-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log
 rm -f /var/run/zfs.snapshot.manager.lock
+rm -f /var/run/zfs.snapshot.manager.policies.lock
+if [[ -x /usr/local/sbin/update_cron ]]; then
+  /usr/local/sbin/update_cron || true
+fi
 echo "ZFS Snapshot Manager removed. Existing ZFS snapshots were not changed."
 ]]></INLINE>
 </FILE>

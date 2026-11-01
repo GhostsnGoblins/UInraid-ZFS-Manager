@@ -25,6 +25,14 @@ if (!zsm_save_enabled($enabled === 'yes')) {
     settings_respond(500, ['ok' => false, 'message' => 'Die Einstellung konnte nicht gespeichert werden.']);
 }
 
+$cronResult = zsm_apply_cron();
+if ($cronResult['exitCode'] !== 0) {
+    settings_respond(500, [
+        'ok' => false,
+        'message' => 'Die Einstellung wurde gespeichert, aber Unraid Cron konnte nicht aktualisiert werden: ' . $cronResult['stderr'],
+    ]);
+}
+
 openlog('zfs.snapshot.manager', LOG_PID, LOG_USER);
 syslog(LOG_NOTICE, 'setting enabled=' . $enabled);
 closelog();

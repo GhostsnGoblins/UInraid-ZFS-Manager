@@ -24,6 +24,10 @@ $datasets = $datasetResult['exitCode'] === 0
 $snapshots = $snapshotResult['exitCode'] === 0
     ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind'])
     : [];
+$policies = zsm_load_policies();
+$frequencyLabels = zsm_frequency_labels();
+$retentionUnitLabels = zsm_retention_unit_labels();
+$weekdayLabels = zsm_weekday_labels();
 
 $errors = [];
 if ($datasetResult['exitCode'] !== 0) {
@@ -68,6 +72,10 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-state-warn { color:#b26a00; }
 .zsm-danger { background:#b71c1c; color:#fff; border-color:#b71c1c; }
 .zsm-danger:hover { background:#8e0000; border-color:#8e0000; }
+.zsm-policy-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; align-items:end; margin:14px 0 18px; }
+.zsm-policy-form label { display:flex; flex-direction:column; gap:5px; }
+.zsm-policy-form input, .zsm-policy-form select { width:100%; box-sizing:border-box; }
+.zsm-policy-actions { display:flex; flex-wrap:wrap; gap:6px; }
 </style>
 
 <div class="zsm-toolbar">
@@ -76,7 +84,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 </div>
 
 <div class="zsm-notice">
-  Testversion <?=zsm_h(ZSM_VERSION)?>: Snapshots können erstellt und kontrolliert gelöscht werden. Fremde Snapshots erfordern die Eingabe ihres vollständigen Namens. Rollback, Retention und Zeitpläne sind nicht enthalten.
+  Testversion <?=zsm_h(ZSM_VERSION)?>: Pro Dataset können automatische Snapshots mit Zeitplan und Aufbewahrungsdauer eingerichtet werden. Automatisch gelöscht werden ausschließlich eindeutig dieser Regel zugeordnete Snapshots. Rollback ist nicht enthalten.
 </div>
 
 <?php if (!$arrayStarted && !$datasets): ?>
@@ -98,7 +106,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
   <div class="zsm-card"><span>Datasets und ZVOLs</span><strong><?=count($datasets)?></strong></div>
   <div class="zsm-card"><span>Snapshots</span><strong><?=count($snapshots)?></strong></div>
-  <div class="zsm-card"><span>Schreibfunktionen</span><strong>2</strong><span class="zsm-muted">Erstellen und sicheres Löschen</span></div>
+  <div class="zsm-card"><span>Automatische Regeln</span><strong><?=count($policies)?></strong></div>
 </div>
 
 <section class="zsm-panel">
@@ -119,6 +127,96 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   <?php else: ?>
     <p class="zsm-muted">Kein verwendbares ZFS-Dataset gefunden.</p>
   <?php endif; ?>
+</section>
+
+<section class="zsm-panel">
+  <h2>Automatische Snapshots</h2>
+  <p>Wähle das Dataset, den Rhythmus und die Aufbewahrungsdauer. Abgelaufene Snapshots werden spätestens bei der nächsten Bereinigungsprüfung innerhalb von 15 Minuten entfernt. Ein Monat entspricht dabei 30 Tagen. Manuelle und fremde Snapshots bleiben unberührt.</p>
+  <?php if ($datasets): ?>
+    <form id="zsm-policy-form" class="zsm-policy-form" method="post">
+      <input id="zsm-policy-id" type="hidden" value="">
+      <label>Dataset
+        <select id="zsm-policy-dataset" required>
+          <?php foreach ($datasets as $dataset): ?>
+            <option value="<?=zsm_h($dataset['name'])?>"><?=zsm_h($dataset['name'])?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Rhythmus
+        <select id="zsm-policy-frequency">
+          <?php foreach ($frequencyLabels as $value => $label): ?>
+            <option value="<?=zsm_h($value)?>"><?=zsm_h($label)?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label id="zsm-policy-weekday-wrap" style="display:none">Wochentag
+        <select id="zsm-policy-weekday">
+          <?php foreach ($weekdayLabels as $value => $label): ?>
+            <option value="<?=$value?>"><?=zsm_h($label)?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label id="zsm-policy-hour-wrap" style="display:none">Stunde
+        <input id="zsm-policy-hour" type="number" min="0" max="23" value="2" required>
+      </label>
+      <label>Minute
+        <input id="zsm-policy-minute" type="number" min="0" max="59" value="0" required>
+      </label>
+      <label>Aufbewahren für
+        <input id="zsm-policy-retention-value" type="number" min="1" max="999" value="7" required>
+      </label>
+      <label>Einheit
+        <select id="zsm-policy-retention-unit">
+          <?php foreach ($retentionUnitLabels as $value => $label): ?>
+            <option value="<?=zsm_h($value)?>"<?=$value === 'days' ? ' selected' : ''?>><?=zsm_h($label)?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <div class="zsm-policy-actions">
+        <button id="zsm-policy-add" type="submit">Zeitplan speichern</button>
+        <button id="zsm-policy-cancel" type="button" style="display:none">Abbrechen</button>
+      </div>
+    </form>
+  <?php else: ?>
+    <p class="zsm-muted">Für einen Zeitplan muss ein ZFS-Dataset verfügbar sein.</p>
+  <?php endif; ?>
+
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th>Dataset</th><th>Zeitplan</th><th>Aufbewahrung</th><th>Nächster Lauf</th><th>Aktion</th></tr></thead>
+      <tbody>
+      <?php if (!$policies): ?>
+        <tr><td colspan="5">Noch kein automatischer Zeitplan eingerichtet.</td></tr>
+      <?php else: ?>
+        <?php foreach ($policies as $policy): ?>
+          <tr>
+            <td><?=zsm_h($policy['dataset'])?><br><span class="zsm-muted">ID <?=zsm_h(substr($policy['id'], 0, 8))?></span></td>
+            <td><?=zsm_h(zsm_policy_schedule_label($policy))?></td>
+            <td><?=(int) $policy['retention_value']?> <?=zsm_h($retentionUnitLabels[$policy['retention_unit']])?></td>
+            <td><?=zsm_h(zsm_policy_next_run($policy)->format('d.m.Y H:i'))?> Uhr</td>
+            <td class="zsm-policy-actions">
+              <button
+                type="button"
+                class="zsm-policy-edit"
+                data-id="<?=zsm_h($policy['id'])?>"
+                data-dataset="<?=zsm_h($policy['dataset'])?>"
+                data-frequency="<?=zsm_h($policy['frequency'])?>"
+                data-minute="<?=(int) $policy['minute']?>"
+                data-hour="<?=(int) $policy['hour']?>"
+                data-weekday="<?=(int) $policy['weekday']?>"
+                data-retention-value="<?=(int) $policy['retention_value']?>"
+                data-retention-unit="<?=zsm_h($policy['retention_unit'])?>"
+              >Bearbeiten</button>
+              <button type="button" class="zsm-policy-run" data-id="<?=zsm_h($policy['id'])?>">Jetzt ausführen</button>
+              <button type="button" class="zsm-policy-preview" data-id="<?=zsm_h($policy['id'])?>">Löschvorschau</button>
+              <button type="button" class="zsm-policy-delete zsm-danger" data-id="<?=zsm_h($policy['id'])?>">Regel löschen</button>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="zsm-panel">
@@ -162,8 +260,10 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
       <?php else: ?>
         <?php foreach (array_reverse($snapshots) as $snapshot): ?>
           <?php
-          $isPluginSnapshot = $snapshot['kind'] === 'manual'
-              && preg_match('/@uzm_manual_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1;
+          $isPluginSnapshot = ($snapshot['kind'] === 'manual'
+                  && preg_match('/@uzm_manual_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1)
+              || ($snapshot['kind'] === 'automatic'
+                  && preg_match('/@uzm_auto_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1);
           $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
           ?>
           <tr>
@@ -194,6 +294,123 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <script>
 $(function () {
+  function showMessage(text, isError) {
+    $('#zsm-message')
+      .removeClass('zsm-error zsm-success')
+      .addClass(isError ? 'zsm-error' : 'zsm-success')
+      .text(text)
+      .show();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updatePolicyFields() {
+    var frequency = $('#zsm-policy-frequency').val();
+    $('#zsm-policy-hour-wrap').toggle(frequency !== 'hourly');
+    $('#zsm-policy-weekday-wrap').toggle(frequency === 'weekly');
+  }
+
+  $('#zsm-policy-frequency').on('change', updatePolicyFields);
+  updatePolicyFields();
+
+  $('#zsm-policy-form').on('submit', function (event) {
+    event.preventDefault();
+    var button = $('#zsm-policy-add');
+    var saveLabel = $('#zsm-policy-id').val() ? 'Änderungen speichern' : 'Zeitplan speichern';
+    button.prop('disabled', true).text('Wird gespeichert...');
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/policies.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: 'save',
+        id: $('#zsm-policy-id').val(),
+        dataset: $('#zsm-policy-dataset').val(),
+        frequency: $('#zsm-policy-frequency').val(),
+        minute: $('#zsm-policy-minute').val(),
+        hour: $('#zsm-policy-hour').val(),
+        weekday: $('#zsm-policy-weekday').val(),
+        retention_value: $('#zsm-policy-retention-value').val(),
+        retention_unit: $('#zsm-policy-retention-unit').val()
+      }
+    }).done(function (response) {
+      showMessage(response.message, false);
+      window.setTimeout(function () { window.location.reload(); }, 700);
+    }).fail(function (xhr) {
+      showMessage((xhr.responseJSON || {}).message || 'Der Zeitplan konnte nicht gespeichert werden.', true);
+      button.prop('disabled', false).text(saveLabel);
+    });
+  });
+
+  $('.zsm-policy-edit').on('click', function () {
+    var button = $(this);
+    $('#zsm-policy-id').val(String(button.attr('data-id') || ''));
+    $('#zsm-policy-dataset').val(String(button.attr('data-dataset') || ''));
+    $('#zsm-policy-dataset').prop('disabled', true);
+    $('#zsm-policy-frequency').val(String(button.attr('data-frequency') || 'hourly'));
+    $('#zsm-policy-minute').val(String(button.attr('data-minute') || '0'));
+    $('#zsm-policy-hour').val(String(button.attr('data-hour') || '0'));
+    $('#zsm-policy-weekday').val(String(button.attr('data-weekday') || '0'));
+    $('#zsm-policy-retention-value').val(String(button.attr('data-retention-value') || '1'));
+    $('#zsm-policy-retention-unit').val(String(button.attr('data-retention-unit') || 'days'));
+    $('#zsm-policy-add').text('Änderungen speichern');
+    $('#zsm-policy-cancel').show();
+    updatePolicyFields();
+    document.getElementById('zsm-policy-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  $('#zsm-policy-cancel').on('click', function () {
+    $('#zsm-policy-id').val('');
+    $('#zsm-policy-dataset').prop('disabled', false);
+    $('#zsm-policy-add').text('Zeitplan speichern');
+    $(this).hide();
+  });
+
+  function policyRequest(button, action, waitingLabel) {
+    var id = String(button.data('id') || '');
+    var originalLabel = button.text();
+    button.prop('disabled', true).text(waitingLabel);
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/policies.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: action,
+        id: id
+      }
+    }).done(function (response) {
+      var text = response.message;
+      if (action === 'preview' && response.candidates && response.candidates.length) {
+        text += ' ' + response.candidates.join(', ');
+      }
+      if (action === 'run' && response.snapshot) {
+        text += ' ' + response.snapshot;
+      }
+      showMessage(text, false);
+      if (action === 'delete' || action === 'run') {
+        window.setTimeout(function () { window.location.reload(); }, 900);
+      } else {
+        button.prop('disabled', false).text(originalLabel);
+      }
+    }).fail(function (xhr) {
+      showMessage((xhr.responseJSON || {}).message || 'Die Aktion ist fehlgeschlagen.', true);
+      button.prop('disabled', false).text(originalLabel);
+    });
+  }
+
+  $('.zsm-policy-run').on('click', function () {
+    policyRequest($(this), 'run', 'Wird ausgeführt...');
+  });
+  $('.zsm-policy-preview').on('click', function () {
+    policyRequest($(this), 'preview', 'Wird geprüft...');
+  });
+  $('.zsm-policy-delete').on('click', function () {
+    if (window.confirm('Zeitplan wirklich löschen? Bereits vorhandene Snapshots bleiben erhalten.')) {
+      policyRequest($(this), 'delete', 'Wird gelöscht...');
+    }
+  });
+
   $('#zsm-create-form').on('submit', function (event) {
     event.preventDefault();
 

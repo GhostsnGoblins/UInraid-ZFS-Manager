@@ -4,6 +4,7 @@
 .githooks/* text eol=lf
 .github/workflows/*.yml text eol=lf
 src/**/scripts/* text eol=lf
+src/**/event/* text eol=lf
 *.php text eol=lf
 *.page text eol=lf
 *.plg text eol=lf
