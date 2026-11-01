@@ -2,17 +2,20 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "zfs.snapshot.manager">
 <!ENTITY author "Claudio">
-<!ENTITY version "0.5.1">
+<!ENTITY version "0.6.0">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg">
-<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.5.1-noarch-1.txz">
-<!ENTITY packageSHA256 "6029297fbd76712390fd5b033e6984c8940ae0b7a1050d8ef1d02c67b424ef65">
+<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.6.0-noarch-1.txz">
+<!ENTITY packageSHA256 "287f3565c7e2bebf1b1d596fe4dd415de12d16b3f64ff9dc22bb32b9aac8d317">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### 0.5.1
+### 0.6.0
 
-- Fixes the Unraid update_cron invocation through the installed Bash backend
-- Preserves existing automatic rules and activates them during the update
+- Adds optional recursive snapshots for a dataset and all child datasets
+- Shows every affected dataset before a recursive rule is saved
+- Rejects overlapping recursive and child-dataset rules
+- Preflights ownership, clones, and holds for the complete expired snapshot set
+- Fixes the action-button row layout in the Unraid table
 - Adds one automatic snapshot rule per selected dataset
 - Supports hourly, daily, and weekly schedules with selectable time
 - Supports age-based retention in hours, days, weeks, or months
@@ -23,7 +26,7 @@
 - Restores Unraid cron entries after installation and array start
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.5.1-noarch-1.txz">
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.6.0-noarch-1.txz">
 <URL>&packageURL;</URL>
 <SHA256>&packageSHA256;</SHA256>
 </FILE>
@@ -32,8 +35,8 @@
 <INLINE><![CDATA[
 set -euo pipefail
 
-PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.5.1-noarch-1.txz"
-EXPECTED_SHA256="6029297fbd76712390fd5b033e6984c8940ae0b7a1050d8ef1d02c67b424ef65"
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.6.0-noarch-1.txz"
+EXPECTED_SHA256="287f3565c7e2bebf1b1d596fe4dd415de12d16b3f64ff9dc22bb32b9aac8d317"
 
 if [[ ! -f "$PACKAGE" ]]; then
   echo "Missing local test package: $PACKAGE"
@@ -47,7 +50,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 /sbin/upgradepkg --install-new --reinstall "$PACKAGE"
-find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.5.1-noarch-1.txz' -delete
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.6.0-noarch-1.txz' -delete
 
 CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -73,7 +76,7 @@ if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-c
   echo "Warning: Unraid cron entries could not be refreshed. They will be retried after the array starts."
 fi
 
-echo "ZFS Snapshot Manager 0.5.1 installed."
+echo "ZFS Snapshot Manager 0.6.0 installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>
@@ -81,7 +84,7 @@ echo "Manage snapshots from the top-level Snapshots tab."
 
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
-removepkg zfs.snapshot.manager-0.5.1-noarch-1 2>/dev/null || true
+removepkg zfs.snapshot.manager-0.6.0-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log

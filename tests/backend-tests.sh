@@ -30,7 +30,7 @@ fi
 if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:kind"* ]]; then
   if [[ "$target" == 'tank/data@uzm_manual_20250102T000000Z' ]]; then
     printf 'external\tlocal\n'
-  elif [[ "$target" == tank/data@uzm_auto_* ]]; then
+  elif [[ "$target" == tank/data@uzm_auto_* || "$target" == tank/data/child@uzm_auto_* ]]; then
     printf 'automatic\tlocal\n'
   else
     printf 'manual\tlocal\n'
@@ -39,12 +39,18 @@ if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:kind"* ]]; then
 fi
 
 if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
-  printf '0123456789abcdef0123456789abcdef\tlocal\n'
+  if [[ "$target" =~ uzm_auto_([a-f0-9]{32})_ ]]; then
+    printf '%s\tlocal\n' "${BASH_REMATCH[1]}"
+  else
+    printf -- '-\t-\n'
+  fi
   exit 0
 fi
 
 if [[ "${1:-}" == "get" && "$*" == *"-o value clones"* ]]; then
   if [[ "$target" == 'tank/data@uzm_manual_20250104T000000Z' ]]; then
+    printf 'tank/clone\n'
+  elif [[ "$target" == 'tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z' ]]; then
     printf 'tank/clone\n'
   else
     printf -- '-\n'
@@ -61,7 +67,7 @@ fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* && "$*" == *"-o name "* ]]; then
   case "$target" in
-    tank/data@uzm_manual_2025010[1-5]T000000Z|tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z|media@auto-2026-10-10_00-00)
+    tank/data@uzm_manual_2025010[1-5]T000000Z|tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z|tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|media@auto-2026-10-10_00-00)
       printf '%s\n' "$target"
       exit 0
       ;;
@@ -73,6 +79,8 @@ if [[ "${1:-}" == "list" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
   printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735689600\tautomatic\t0123456789abcdef0123456789abcdef\n'
   printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\tmanual\t-\n'
   printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735689600\tautomatic\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+  printf 'tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\n'
+  printf 'tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\n'
   printf 'media@auto-2026-10-10_00-00\t1735689600\t-\t-\n'
   exit 0
 fi
@@ -220,7 +228,7 @@ preview_output="$("$backend" preview-policy "$policy_id" 'tank/data' '3600')"
 [[ "$preview_output" == 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' ]]
 ! grep -Fq 'destroy tank/data@uzm_manual_20250101T000000Z' "$mock_log" || true
 
-policy_output="$("$backend" run-policy "$policy_id" 'tank/data' '3600')"
+policy_output="$("$backend" run-policy "$policy_id" 'tank/data' '3600' '0')"
 policy_snapshot="$(printf '%s\n' "$policy_output" | head -n 1)"
 [[ "$policy_snapshot" =~ ^tank/data@uzm_auto_0123456789abcdef0123456789abcdef_[0-9]{8}T[0-9]{6}Z$ ]]
 grep -Fq 'snapshot -o org.unraidzfsmanager:kind=automatic -o org.unraidzfsmanager:policy=0123456789abcdef0123456789abcdef tank/data@uzm_auto_' "$mock_log"
@@ -228,5 +236,21 @@ grep -Fq 'destroy tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T0
 ! grep -Fq 'destroy tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z' "$mock_log"
 grep -Fq 'action=create mode=automatic policy=0123456789abcdef0123456789abcdef dataset=tank/data' "$test_root/plugin.log"
 grep -Fq 'action=delete mode=retention snapshot=tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z result=success' "$test_root/plugin.log"
+
+recursive_policy_id="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+recursive_output="$("$backend" run-policy "$recursive_policy_id" 'tank/data' '3600' '1')"
+recursive_snapshot="$(printf '%s\n' "$recursive_output" | head -n 1)"
+[[ "$recursive_snapshot" =~ ^tank/data@uzm_auto_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_[0-9]{8}T[0-9]{6}Z$ ]]
+grep -Fq 'snapshot -r -o org.unraidzfsmanager:kind=automatic -o org.unraidzfsmanager:policy=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb tank/data@uzm_auto_' "$mock_log"
+grep -Fq 'action=create mode=automatic policy=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb dataset=tank/data recursive=1' "$test_root/plugin.log"
+
+set +e
+recursive_cleanup_output="$("$backend" cleanup-policy 'cccccccccccccccccccccccccccccccc' 'tank/data' '3600' 2>&1)"
+recursive_cleanup_status=$?
+set -e
+[[ $recursive_cleanup_status -eq 78 ]]
+[[ "$recursive_cleanup_output" == *"abhängige Klone"* ]]
+! grep -Fq 'destroy tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z' "$mock_log"
+! grep -Fq 'destroy tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z' "$mock_log"
 
 printf 'Backend-Tests erfolgreich.\n'

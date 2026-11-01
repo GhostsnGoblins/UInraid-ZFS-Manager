@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.5.1',
+    [string]$Version = '0.6.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,8 +81,11 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
-- Fixes the Unraid update_cron invocation through the installed Bash backend
-- Preserves existing automatic rules and activates them during the update
+- Adds optional recursive snapshots for a dataset and all child datasets
+- Shows every affected dataset before a recursive rule is saved
+- Rejects overlapping recursive and child-dataset rules
+- Preflights ownership, clones, and holds for the complete expired snapshot set
+- Fixes the action-button row layout in the Unraid table
 - Adds one automatic snapshot rule per selected dataset
 - Supports hourly, daily, and weekly schedules with selectable time
 - Supports age-based retention in hours, days, weeks, or months

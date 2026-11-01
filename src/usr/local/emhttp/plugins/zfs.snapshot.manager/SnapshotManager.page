@@ -76,6 +76,10 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-policy-form label { display:flex; flex-direction:column; gap:5px; }
 .zsm-policy-form input, .zsm-policy-form select { width:100%; box-sizing:border-box; }
 .zsm-policy-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.zsm-policy-actions button { margin:0; padding:7px 10px; white-space:nowrap; }
+.zsm-policy-actions .zsm-danger { background:#b71c1c !important; border-color:#b71c1c !important; color:#fff !important; }
+.zsm-policy-checkbox input { width:auto; margin-right:6px; }
+.zsm-policy-scope { grid-column:1/-1; padding:9px 11px; border-left:3px solid #ff8c00; background:rgba(255,140,0,.08); }
 </style>
 
 <div class="zsm-toolbar">
@@ -172,10 +176,14 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
           <?php endforeach; ?>
         </select>
       </label>
+      <label class="zsm-policy-checkbox">Umfang
+        <span><input id="zsm-policy-recursive" type="checkbox" value="1">Untergeordnete Datasets einbeziehen</span>
+      </label>
       <div class="zsm-policy-actions">
         <button id="zsm-policy-add" type="submit">Zeitplan speichern</button>
         <button id="zsm-policy-cancel" type="button" style="display:none">Abbrechen</button>
       </div>
+      <div id="zsm-policy-scope" class="zsm-policy-scope"></div>
     </form>
   <?php else: ?>
     <p class="zsm-muted">Für einen Zeitplan muss ein ZFS-Dataset verfügbar sein.</p>
@@ -183,18 +191,19 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th>Dataset</th><th>Zeitplan</th><th>Aufbewahrung</th><th>Nächster Lauf</th><th>Aktion</th></tr></thead>
+      <thead><tr><th>Dataset</th><th>Umfang</th><th>Zeitplan</th><th>Aufbewahrung</th><th>Nächster Lauf</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$policies): ?>
-        <tr><td colspan="5">Noch kein automatischer Zeitplan eingerichtet.</td></tr>
+        <tr><td colspan="6">Noch kein automatischer Zeitplan eingerichtet.</td></tr>
       <?php else: ?>
         <?php foreach ($policies as $policy): ?>
           <tr>
             <td><?=zsm_h($policy['dataset'])?><br><span class="zsm-muted">ID <?=zsm_h(substr($policy['id'], 0, 8))?></span></td>
+            <td><?=$policy['recursive'] ? 'Rekursiv' : 'Nur dieses Dataset'?></td>
             <td><?=zsm_h(zsm_policy_schedule_label($policy))?></td>
             <td><?=(int) $policy['retention_value']?> <?=zsm_h($retentionUnitLabels[$policy['retention_unit']])?></td>
             <td><?=zsm_h(zsm_policy_next_run($policy)->format('d.m.Y H:i'))?> Uhr</td>
-            <td class="zsm-policy-actions">
+            <td><div class="zsm-policy-actions">
               <button
                 type="button"
                 class="zsm-policy-edit"
@@ -206,11 +215,12 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
                 data-weekday="<?=(int) $policy['weekday']?>"
                 data-retention-value="<?=(int) $policy['retention_value']?>"
                 data-retention-unit="<?=zsm_h($policy['retention_unit'])?>"
+                data-recursive="<?=$policy['recursive'] ? '1' : '0'?>"
               >Bearbeiten</button>
               <button type="button" class="zsm-policy-run" data-id="<?=zsm_h($policy['id'])?>">Jetzt ausführen</button>
               <button type="button" class="zsm-policy-preview" data-id="<?=zsm_h($policy['id'])?>">Löschvorschau</button>
               <button type="button" class="zsm-policy-delete zsm-danger" data-id="<?=zsm_h($policy['id'])?>">Regel löschen</button>
-            </td>
+            </div></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -294,6 +304,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <script>
 $(function () {
+  var policyDatasets = <?=json_encode(array_column($datasets, 'name'), JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+
   function showMessage(text, isError) {
     $('#zsm-message')
       .removeClass('zsm-error zsm-success')
@@ -309,13 +321,33 @@ $(function () {
     $('#zsm-policy-weekday-wrap').toggle(frequency === 'weekly');
   }
 
+  function updatePolicyScope() {
+    var root = String($('#zsm-policy-dataset').val() || '');
+    var recursive = $('#zsm-policy-recursive').prop('checked');
+    var affected = policyDatasets.filter(function (name) {
+      return name === root || (recursive && name.indexOf(root + '/') === 0);
+    });
+    $('#zsm-policy-scope').text(
+      recursive
+        ? 'Betroffene Datasets (' + affected.length + '): ' + affected.join(', ')
+        : 'Betroffenes Dataset: ' + root
+    );
+  }
+
   $('#zsm-policy-frequency').on('change', updatePolicyFields);
+  $('#zsm-policy-dataset, #zsm-policy-recursive').on('change', updatePolicyScope);
   updatePolicyFields();
+  updatePolicyScope();
 
   $('#zsm-policy-form').on('submit', function (event) {
     event.preventDefault();
     var button = $('#zsm-policy-add');
     var saveLabel = $('#zsm-policy-id').val() ? 'Änderungen speichern' : 'Zeitplan speichern';
+    if ($('#zsm-policy-recursive').prop('checked') && !window.confirm(
+      'Der Zeitplan wird für das gewählte Dataset und alle angezeigten Unter-Datasets ausgeführt. Fortfahren?'
+    )) {
+      return;
+    }
     button.prop('disabled', true).text('Wird gespeichert...');
     $.ajax({
       url: '/plugins/zfs.snapshot.manager/include/policies.php',
@@ -326,6 +358,7 @@ $(function () {
         action: 'save',
         id: $('#zsm-policy-id').val(),
         dataset: $('#zsm-policy-dataset').val(),
+        recursive: $('#zsm-policy-recursive').prop('checked') ? '1' : '0',
         frequency: $('#zsm-policy-frequency').val(),
         minute: $('#zsm-policy-minute').val(),
         hour: $('#zsm-policy-hour').val(),
@@ -353,17 +386,21 @@ $(function () {
     $('#zsm-policy-weekday').val(String(button.attr('data-weekday') || '0'));
     $('#zsm-policy-retention-value').val(String(button.attr('data-retention-value') || '1'));
     $('#zsm-policy-retention-unit').val(String(button.attr('data-retention-unit') || 'days'));
+    $('#zsm-policy-recursive').prop('checked', String(button.attr('data-recursive') || '0') === '1');
     $('#zsm-policy-add').text('Änderungen speichern');
     $('#zsm-policy-cancel').show();
     updatePolicyFields();
+    updatePolicyScope();
     document.getElementById('zsm-policy-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
   $('#zsm-policy-cancel').on('click', function () {
     $('#zsm-policy-id').val('');
     $('#zsm-policy-dataset').prop('disabled', false);
+    $('#zsm-policy-recursive').prop('checked', false);
     $('#zsm-policy-add').text('Zeitplan speichern');
     $(this).hide();
+    updatePolicyScope();
   });
 
   function policyRequest(button, action, waitingLabel) {

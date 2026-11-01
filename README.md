@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.5.1
+## Funktionsumfang 0.6.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -10,6 +10,8 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - vorhandene ZFS-Snapshots auflisten
 - einen manuellen Snapshot für ein ausgewähltes Dataset erstellen
 - pro Dataset einen automatischen Zeitplan einrichten
+- Unter-Datasets optional rekursiv in dieselbe Regel einbeziehen
+- betroffene Datasets vor dem Speichern anzeigen und überlappende Regeln verhindern
 - stündliche, tägliche oder wöchentliche Ausführung mit auswählbarer Minute, Uhrzeit und Wochentag
 - automatische Snapshots für eine frei wählbare Anzahl Stunden, Tage, Wochen oder Monate aufbewahren
 - abgelaufene automatische Snapshots spätestens bei der nächsten 15-Minuten-Prüfung entfernen
@@ -29,6 +31,10 @@ Beim Ausschalten verschwindet der Hauptreiter nach dem Neuladen der WebGUI. Das 
 
 Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie die ZFS-Benutzereigenschaft `org.unraidzfsmanager:kind=manual`. Automatische Snapshots enthalten zusätzlich die stabile ID ihrer Regel im Namen und in `org.unraidzfsmanager:policy`. Die automatische Bereinigung verlangt alle Kennzeichen in exakter Übereinstimmung. Manuelle und fremde Snapshots werden nicht erfasst.
 
+## Windows-Vorgängerversionen
+
+Die erstellten ZFS-Snapshots werden noch nicht als Windows-Vorgängerversionen veröffentlicht. Dafür muss eine SMB-Freigabe über Sambas `shadow_copy2` eindeutig einem ZFS-Dataset und dessen `.zfs/snapshot`-Verzeichnis zugeordnet werden. Unraid-User-Shares unter `/mnt/user` können Daten mehrerer Datenträger zusammenführen und dürfen deshalb nicht automatisch wie ein einzelnes Dataset behandelt werden. Version 0.6.0 verändert keine Samba-Konfiguration. Siehe die [offizielle Samba-Dokumentation zu `vfs_shadow_copy2`](https://www.samba.org/samba/samba/docs/man/manpages/vfs_shadow_copy2.8.html).
+
 ## Voraussetzungen
 
 - Unraid 6.12 oder neuer
@@ -46,7 +52,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.5.1-noarch-1.txz`
+- `zfs.snapshot.manager-0.6.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -111,6 +117,7 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Der Aktivierungszustand wird serverseitig geprüft. Ein ausgeblendeter Reiter allein gilt nicht als Schutz.
 - Eigene Plugin-Snapshots werden über Namensschema und lokal gesetzte Plugin-Eigenschaft erkannt.
 - Automatische Löschungen verlangen zusätzlich die exakte stabile Regel-ID im Namen und in einer zweiten lokal gesetzten ZFS-Eigenschaft.
+- Vor der Bereinigung einer rekursiven Snapshot-Gruppe werden Eigentum, Klone und Holds aller fälligen Mitglieder geprüft.
 - Die nicht destruktive Löschvorschau zeigt nur bereits abgelaufene Snapshots derselben Regel.
 - Cron ruft nur die stabile Regel-ID auf. Dataset und Aufbewahrungsdauer werden bei jedem Lauf erneut aus der serverseitigen Konfiguration gelesen.
 - Fremde Snapshots erfordern die exakte Eingabe ihres vollständigen Namens in Oberfläche und Backend.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Unter-Datasets optional rekursiv in eine automatische Regel einbeziehen
+- alle betroffenen Datasets vor dem Speichern in der WebGUI anzeigen
+- überlappende rekursive und untergeordnete Regeln serverseitig verhindern
+- vor rekursiver Bereinigung alle fälligen Snapshots auf Eigentum, Klone und Holds prüfen
+- Tabellenlayout der Aktionsschaltflächen korrigieren
+- bestehende Regeln aus 0.5.x nicht rekursiv und unverändert übernehmen
+
 ## 0.5.1
 
 - Unraid `update_cron` über das installierte Bash-Backend statt direkt aus PHP starten

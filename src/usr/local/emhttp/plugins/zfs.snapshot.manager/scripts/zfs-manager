@@ -47,6 +47,10 @@ is_valid_retention_seconds() {
   [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 3600 && 10#$1 <= 3153600000 ))
 }
 
+is_valid_recursive() {
+  [[ "$1" == "0" || "$1" == "1" ]]
+}
+
 is_plugin_snapshot() {
   local snapshot="$1"
   local snapshot_name
@@ -231,7 +235,7 @@ list_owned_policy_snapshots() {
   local name creation kind policy snapshot_name ownership policy_ownership
 
   while IFS=$'\t' read -r name creation kind policy; do
-    [[ "${name%@*}" == "$dataset" ]] || continue
+    [[ "${name%@*}" == "$dataset" || "${name%@*}" == "$dataset/"* ]] || continue
     snapshot_name="${name##*@}"
     [[ "$snapshot_name" =~ ^uzm_auto_${policy_id}_[0-9]{8}T[0-9]{6}Z$ ]] || continue
     [[ "$kind" == "automatic" && "$policy" == "$policy_id" ]] || continue
@@ -259,7 +263,7 @@ preview_policy() {
   done < <(list_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset")
 }
 
-cleanup_owned_policy_snapshots() {
+expired_policy_snapshots() {
   local zfs_bin="$1"
   local policy_id="$2"
   local dataset="$3"
@@ -268,15 +272,31 @@ cleanup_owned_policy_snapshots() {
   cutoff=$(( $(date -u '+%s') - 10#$retention_seconds ))
   while IFS=$'\t' read -r name creation; do
     [[ "$creation" =~ ^[0-9]+$ ]] || continue
-    (( 10#$creation <= cutoff )) || continue
+    (( 10#$creation <= cutoff )) && printf '%s\n' "$name"
+  done < <(list_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset")
+}
+
+cleanup_owned_policy_snapshots() {
+  local zfs_bin="$1"
+  local policy_id="$2"
+  local dataset="$3"
+  local retention_seconds="$4"
+  local name
+  local -a candidates=()
+  mapfile -t candidates < <(expired_policy_snapshots "$zfs_bin" "$policy_id" "$dataset" "$retention_seconds")
+
+  for name in "${candidates[@]}"; do
     require_snapshot_exists "$zfs_bin" "$name" "retention"
     if ! verify_plugin_snapshot_ownership "$zfs_bin" "$name"; then
       write_log "action=delete mode=retention policy=${policy_id} snapshot=${name} result=blocked reason=not_plugin_owned"
       fail "Ein abgelaufener Snapshot konnte nicht eindeutig der Regel zugeordnet werden." 77
     fi
     require_no_snapshot_dependencies "$zfs_bin" "$name" "retention"
+  done
+
+  for name in "${candidates[@]}"; do
     destroy_checked_snapshot "$zfs_bin" "$name" "retention"
-  done < <(list_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset")
+  done
 }
 
 cleanup_policy() {
@@ -297,10 +317,13 @@ run_policy() {
   local policy_id="$2"
   local dataset="$3"
   local retention_seconds="$4"
+  local recursive="$5"
   local timestamp snapshot
+  local -a snapshot_arguments
   is_valid_policy_id "$policy_id" || fail "Ungültige Zeitplan-ID." 64
   is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
   is_valid_retention_seconds "$retention_seconds" || fail "Ungültige Aufbewahrungsdauer." 64
+  is_valid_recursive "$recursive" || fail "Ungültige Rekursiv-Einstellung." 64
   lock_snapshot_action
   require_dataset_exists "$zfs_bin" "$dataset"
   timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
@@ -309,14 +332,18 @@ run_policy() {
   if "$zfs_bin" list -H -t snapshot -o name "$snapshot" >/dev/null 2>&1; then
     fail "Für diese Sekunde existiert bereits ein automatischer Snapshot." 73
   fi
-  if ! "$zfs_bin" snapshot \
-      -o "${SNAPSHOT_KIND_PROPERTY}=automatic" \
-      -o "${SNAPSHOT_POLICY_PROPERTY}=${policy_id}" \
-      "$snapshot"; then
-    write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} snapshot=${snapshot} result=failed"
+  snapshot_arguments=(snapshot)
+  [[ "$recursive" == "1" ]] && snapshot_arguments+=(-r)
+  snapshot_arguments+=(
+    -o "${SNAPSHOT_KIND_PROPERTY}=automatic"
+    -o "${SNAPSHOT_POLICY_PROPERTY}=${policy_id}"
+    "$snapshot"
+  )
+  if ! "$zfs_bin" "${snapshot_arguments[@]}"; then
+    write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} recursive=${recursive} snapshot=${snapshot} result=failed"
     fail "ZFS konnte den automatischen Snapshot nicht erstellen." 74
   fi
-  write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} snapshot=${snapshot} result=success"
+  write_log "action=create mode=automatic policy=${policy_id} dataset=${dataset} recursive=${recursive} snapshot=${snapshot} result=success"
   printf '%s\n' "$snapshot"
   cleanup_owned_policy_snapshots "$zfs_bin" "$policy_id" "$dataset" "$retention_seconds"
 }
@@ -354,8 +381,8 @@ main() {
       delete_external_snapshot "$zfs_bin" "$2" "$3"
       ;;
     run-policy)
-      [[ $# -eq 4 ]] || fail "Aufruf: zfs-manager run-policy ID DATASET SEKUNDEN" 64
-      run_policy "$zfs_bin" "$2" "$3" "$4"
+      [[ $# -eq 5 ]] || fail "Aufruf: zfs-manager run-policy ID DATASET SEKUNDEN REKURSIV" 64
+      run_policy "$zfs_bin" "$2" "$3" "$4" "$5"
       ;;
     cleanup-policy)
       [[ $# -eq 4 ]] || fail "Aufruf: zfs-manager cleanup-policy ID DATASET SEKUNDEN" 64

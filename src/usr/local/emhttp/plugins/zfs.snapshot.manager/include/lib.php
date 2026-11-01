@@ -7,7 +7,7 @@ const ZSM_CONFIG_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.
 const ZSM_POLICIES_FILE = '/boot/config/plugins/zfs.snapshot.manager/policies.json';
 const ZSM_CRON_FILE = '/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron';
 const ZSM_POLICY_RUNNER = '/usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php';
-const ZSM_VERSION = '0.5.1';
+const ZSM_VERSION = '0.6.0';
 
 function zsm_is_enabled(): bool
 {
@@ -91,12 +91,13 @@ function zsm_weekday_labels(): array
 
 /**
  * @param array<string,mixed> $policy
- * @return array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}|null
+ * @return array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}|null
  */
 function zsm_normalize_policy(array $policy): ?array
 {
     $id = $policy['id'] ?? '';
     $dataset = $policy['dataset'] ?? '';
+    $recursive = $policy['recursive'] ?? false;
     $frequency = $policy['frequency'] ?? '';
     $retentionUnit = $policy['retention_unit'] ?? '';
     $minute = filter_var($policy['minute'] ?? null, FILTER_VALIDATE_INT);
@@ -106,6 +107,7 @@ function zsm_normalize_policy(array $policy): ?array
 
     if (!is_string($id) || !zsm_is_valid_policy_id($id)
         || !is_string($dataset) || !zsm_is_valid_dataset($dataset)
+        || !is_bool($recursive)
         || !is_string($frequency) || !array_key_exists($frequency, zsm_frequency_labels())
         || !is_string($retentionUnit) || !array_key_exists($retentionUnit, zsm_retention_unit_labels())
         || $minute === false || $minute < 0 || $minute > 59
@@ -118,6 +120,7 @@ function zsm_normalize_policy(array $policy): ?array
     return [
         'id' => $id,
         'dataset' => $dataset,
+        'recursive' => $recursive,
         'frequency' => $frequency,
         'minute' => $minute,
         'hour' => $hour,
@@ -128,7 +131,7 @@ function zsm_normalize_policy(array $policy): ?array
 }
 
 /**
- * @return list<array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}>
+ * @return list<array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}>
  */
 function zsm_load_policies(): array
 {
@@ -179,8 +182,8 @@ function zsm_save_policies(array $policies): bool
 }
 
 /**
- * @param list<array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}> $policies
- * @return array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}|null
+ * @param list<array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}> $policies
+ * @return array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string}|null
  */
 function zsm_find_policy(array $policies, string $id): ?array
 {
@@ -197,7 +200,23 @@ function zsm_generate_policy_id(): string
     return bin2hex(random_bytes(16));
 }
 
-/** @param array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
+/**
+ * @param array{id:string,dataset:string,recursive:bool} $first
+ * @param array{id:string,dataset:string,recursive:bool} $second
+ */
+function zsm_policy_scopes_overlap(array $first, array $second): bool
+{
+    if ($first['dataset'] === $second['dataset']) {
+        return true;
+    }
+
+    $firstContainsSecond = str_starts_with($second['dataset'], $first['dataset'] . '/');
+    $secondContainsFirst = str_starts_with($first['dataset'], $second['dataset'] . '/');
+    return ($first['recursive'] && $firstContainsSecond)
+        || ($second['recursive'] && $secondContainsFirst);
+}
+
+/** @param array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
 function zsm_policy_cron_expression(array $policy): string
 {
     if ($policy['frequency'] === 'hourly') {
@@ -209,7 +228,7 @@ function zsm_policy_cron_expression(array $policy): string
     return sprintf('%d %d * * %d', $policy['minute'], $policy['hour'], $policy['weekday']);
 }
 
-/** @param array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
+/** @param array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
 function zsm_policy_schedule_label(array $policy): string
 {
     if ($policy['frequency'] === 'hourly') {
@@ -222,14 +241,14 @@ function zsm_policy_schedule_label(array $policy): string
     return sprintf('%s um %02d:%02d Uhr', $weekdays[$policy['weekday']], $policy['hour'], $policy['minute']);
 }
 
-/** @param array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
+/** @param array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
 function zsm_policy_retention_seconds(array $policy): int
 {
     $secondsPerUnit = ['hours' => 3600, 'days' => 86400, 'weeks' => 604800, 'months' => 2592000];
     return $policy['retention_value'] * $secondsPerUnit[$policy['retention_unit']];
 }
 
-/** @param array{id:string,dataset:string,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
+/** @param array{id:string,dataset:string,recursive:bool,frequency:string,minute:int,hour:int,weekday:int,retention_value:int,retention_unit:string} $policy */
 function zsm_policy_next_run(array $policy): DateTimeImmutable
 {
     $now = new DateTimeImmutable('now');

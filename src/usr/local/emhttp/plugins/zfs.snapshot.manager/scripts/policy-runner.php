@@ -30,6 +30,7 @@ if ($mode === 'run') {
         $policy['id'],
         $policy['dataset'],
         (string) zsm_policy_retention_seconds($policy),
+        $policy['recursive'] ? '1' : '0',
     ], 120);
     if ($result['exitCode'] !== 0) {
         fwrite(STDERR, ($result['stderr'] ?: 'Zeitplan fehlgeschlagen.') . PHP_EOL);

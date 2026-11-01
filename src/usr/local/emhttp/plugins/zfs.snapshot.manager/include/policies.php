@@ -44,6 +44,7 @@ if ($action === 'save') {
     $candidate = [
         'id' => $requestedId !== '' ? $requestedId : zsm_generate_policy_id(),
         'dataset' => $_POST['dataset'] ?? '',
+        'recursive' => ($_POST['recursive'] ?? '') === '1',
         'frequency' => $_POST['frequency'] ?? '',
         'minute' => $_POST['minute'] ?? null,
         'hour' => $_POST['hour'] ?? null,
@@ -75,8 +76,11 @@ if ($action === 'save') {
     }
 
     foreach ($policies as $existingPolicy) {
-        if ($existingPolicy['dataset'] === $policy['dataset'] && $existingPolicy['id'] !== $policy['id']) {
-            policy_respond(409, ['ok' => false, 'message' => 'Für dieses Dataset existiert bereits ein Zeitplan. Lösche ihn zuerst.']);
+        if ($existingPolicy['id'] !== $policy['id'] && zsm_policy_scopes_overlap($existingPolicy, $policy)) {
+            policy_respond(409, [
+                'ok' => false,
+                'message' => 'Der gewählte Dataset-Bereich überschneidet sich mit der Regel für ' . $existingPolicy['dataset'] . '.',
+            ]);
         }
     }
 
@@ -143,7 +147,13 @@ if ($action === 'preview') {
     ]);
 }
 
-$result = zsm_run(['run-policy', $policy['id'], $policy['dataset'], $retentionSeconds], 120);
+$result = zsm_run([
+    'run-policy',
+    $policy['id'],
+    $policy['dataset'],
+    $retentionSeconds,
+    $policy['recursive'] ? '1' : '0',
+], 120);
 if ($result['exitCode'] !== 0) {
     policy_respond(409, ['ok' => false, 'message' => $result['stderr'] ?: 'Der Zeitplan konnte nicht ausgeführt werden.']);
 }
