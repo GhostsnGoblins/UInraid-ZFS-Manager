@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.7.2
+## Funktionsumfang 0.7.3
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -18,7 +18,7 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - einen Zeitplan sofort ausführen und die aktuell fälligen Löschungen vorher anzeigen
 - ausschließlich eindeutig gekennzeichnete manuelle Plugin-Snapshots löschen
 - fremde Snapshots nach einer Sicherheitsabfrage löschen
-- verwaiste VM-Snapshots samt `.mem`- und `.running`-Dateien anzeigen
+- verwaiste VM-Snapshots in der Snapshot-Tabelle kennzeichnen
 - Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
 - pro Dataset eine private, schreibgeschützte Snapshot-Freigabe für ausgewählte Benutzer einrichten
@@ -65,7 +65,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.7.2-noarch-1.txz`
+- `zfs.snapshot.manager-0.7.3-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren

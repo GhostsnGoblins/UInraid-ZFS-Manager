@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.7.2',
+    [string]$Version = '0.7.3',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )

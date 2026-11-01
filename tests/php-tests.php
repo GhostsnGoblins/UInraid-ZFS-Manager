@@ -112,6 +112,9 @@ rmdir("$orphanRoot/vm");
 rmdir("$orphanRoot/db");
 rmdir($orphanRoot);
 
+check(str_contains(zsm_vm_orphan_hint($orphans[1]), 'memoryS20261101110000.mem'), 'Hinweis nennt die Dateien');
+check(!str_contains(zsm_vm_orphan_hint($orphans[0]), 'Dateien'), 'Hinweis ohne Dateien bleibt kurz');
+
 $stats = zsm_snapshot_stats([
     ['name' => 'tank/a@eins', 'creation' => '100'],
     ['name' => 'tank/a@zwei', 'creation' => '300'],

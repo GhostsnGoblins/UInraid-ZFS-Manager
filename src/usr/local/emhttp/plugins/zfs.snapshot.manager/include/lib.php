@@ -12,7 +12,7 @@ const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
 const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
-const ZSM_VERSION = '0.7.2';
+const ZSM_VERSION = '0.7.3';
 
 function zsm_is_enabled(): bool
 {
@@ -697,6 +697,17 @@ function zsm_find_vm_orphans(array $snapshots, array $filesystems, string $datab
 
     usort($orphans, static fn (array $first, array $second): int => strcmp($second['id'], $first['id']));
     return $orphans;
+}
+
+/** @param array{files:list<array{name:string,size:int}>,files_size:int} $orphan */
+function zsm_vm_orphan_hint(array $orphan): string
+{
+    $hint = 'Nicht mehr in der Snapshot-Liste von Unraid.';
+    if ($orphan['files']) {
+        $names = implode(', ', array_column($orphan['files'], 'name'));
+        $hint .= ' Zurückgebliebene Dateien im VM-Ordner: ' . $names . ' (' . zsm_format_bytes((string) $orphan['files_size']) . ').';
+    }
+    return $hint;
 }
 
 /** @return list<array<string,string>> */

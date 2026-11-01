@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3
+
+- eigenen Bereich für verwaiste VM-Snapshots entfernen, die Kennzeichnung `verwaist` in der Snapshot-Tabelle genügt
+- zurückgebliebene Dateien als Hinweis an der Kennzeichnung anzeigen
+- Tabelle der automatischen Snapshots per Klick auf die Überschrift sortieren
+
 ## 0.7.2
 
 - verwaiste VM-Snapshots samt `.mem`- und `.running`-Dateien anzeigen, die Unraid nicht mehr in seiner Liste führt

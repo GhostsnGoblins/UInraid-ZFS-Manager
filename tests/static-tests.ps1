@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.7.2-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.7.3-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -29,8 +29,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.7.2';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.7.2.'
+if ($library -notmatch "const ZSM_VERSION = '0.7.3';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.7.3.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -117,11 +117,14 @@ if ($page -notmatch 'window\.confirm' -or $page -notmatch "external \? 'delete-e
 if ($page -match 'window\.prompt' -or $page -notmatch 'requestData\.confirmation = snapshot') {
     throw 'Fremde Snapshots verwenden nicht die einfache Sicherheitsabfrage.'
 }
-if ($page -notmatch 'zsm_find_vm_orphans' -or $page -notmatch 'zsm-vm-orphans') {
-    throw 'Hauptseite zeigt keine verwaisten VM-Snapshots.'
+if ($page -notmatch 'zsm_find_vm_orphans' -or $page -notmatch 'zsm_vm_orphan_hint') {
+    throw 'Snapshot-Tabelle kennzeichnet keine verwaisten VM-Snapshots.'
 }
 if ($page -notmatch 'data-zsm-panel="policies"' -or $page -notmatch 'data-zsm-panel="shares"') {
     throw 'Zeitpläne und Freigaben liegen nicht in eigenen Tabs.'
+}
+if ($page -notmatch 'data-sort="number">Nächster Lauf') {
+    throw 'Zeitplan-Tabelle ist nicht sortierbar.'
 }
 if ($page -notmatch 'data-sort="number">Letzter Snapshot' -or $page -notmatch 'function sortTable') {
     throw 'Dataset-Tabelle ist nicht sortierbar oder zeigt kein Snapshot-Datum.'
@@ -158,7 +161,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.7.2-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.7.3-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }

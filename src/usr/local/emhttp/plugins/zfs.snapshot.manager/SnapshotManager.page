@@ -34,8 +34,7 @@ $shareUsers = zsm_load_unraid_users();
 $snapshotShares = zsm_resolve_shares(zsm_load_shares(), $filesystems, $shareUsers);
 $storedShareUsers = array_column(zsm_load_shares(), 'users', 'id');
 $serverName = (string) ($var['NAME'] ?? 'Tower');
-$vmOrphans = zsm_find_vm_orphans($snapshots, $filesystems);
-$vmOrphanNames = array_flip(array_filter(array_column($vmOrphans, 'snapshot')));
+$vmOrphans = array_column(zsm_find_vm_orphans($snapshots, $filesystems), null, 'snapshot');
 $snapshotStats = zsm_snapshot_stats($snapshots);
 
 $errors = [];
@@ -215,7 +214,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th>Dataset</th><th>Umfang</th><th>Zeitplan</th><th>Aufbewahrung</th><th>Nächster Lauf</th><th>Aktion</th></tr></thead>
+      <thead><tr><th data-sort="text">Dataset</th><th data-sort="text">Umfang</th><th data-sort="text">Zeitplan</th><th data-sort="number">Aufbewahrung</th><th data-sort="number">Nächster Lauf</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$policies): ?>
         <tr><td colspan="6">Noch kein automatischer Zeitplan eingerichtet.</td></tr>
@@ -225,8 +224,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
             <td><?=zsm_h($policy['dataset'])?><br><span class="zsm-muted">ID <?=zsm_h(substr($policy['id'], 0, 8))?></span></td>
             <td><?=$policy['recursive'] ? 'Rekursiv' : 'Nur dieses Dataset'?></td>
             <td><?=zsm_h(zsm_policy_schedule_label($policy))?></td>
-            <td><?=(int) $policy['retention_value']?> <?=zsm_h($retentionUnitLabels[$policy['retention_unit']])?></td>
-            <td><?=zsm_h(zsm_policy_next_run($policy)->format('d.m.Y H:i'))?> Uhr</td>
+            <td data-sort-value="<?=zsm_policy_retention_seconds($policy)?>"><?=(int) $policy['retention_value']?> <?=zsm_h($retentionUnitLabels[$policy['retention_unit']])?></td>
+            <td data-sort-value="<?=zsm_policy_next_run($policy)->getTimestamp()?>"><?=zsm_h(zsm_policy_next_run($policy)->format('d.m.Y H:i'))?> Uhr</td>
             <td><div class="zsm-policy-actions">
               <button
                 type="button"
@@ -349,31 +348,6 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
 </section>
 
-<?php if ($vmOrphans): ?>
-<section class="zsm-panel" id="zsm-vm-orphans" data-zsm-panel="overview">
-  <h2>Verwaiste VM-Snapshots</h2>
-  <p>Diese Snapshots stehen nicht mehr in der Snapshot-Liste von Unraid. Die VM-Oberfläche entfernt bei nativen ZFS-Snapshots nur den Listeneintrag, ZFS-Snapshot und Dateien bleiben liegen und belegen weiter Platz.</p>
-  <p class="zsm-muted">Den ZFS-Snapshot löschst du unten über "Extern löschen". Die Dateien im VM-Ordner entfernt das Plugin nicht, prüfe und lösche sie von Hand. Die <code>.qcow2</code> der VM gehört nicht dazu.</p>
-  <div class="zsm-table-wrap">
-    <table class="zsm-table">
-      <thead><tr><th>VM</th><th>Snapshot-ID</th><th>ZFS-Snapshot</th><th>Belegt</th><th>Dateien</th><th>Größe der Dateien</th></tr></thead>
-      <tbody>
-      <?php foreach ($vmOrphans as $orphan): ?>
-        <tr>
-          <td><?=zsm_h($orphan['vm'])?></td>
-          <td><?=zsm_h($orphan['id'])?></td>
-          <td><?=$orphan['snapshot'] !== '' ? zsm_h($orphan['snapshot']) : '<span class="zsm-muted">bereits gelöscht</span>'?></td>
-          <td><?=zsm_h($orphan['snapshot'] !== '' ? zsm_format_bytes($orphan['used']) : '-')?></td>
-          <td><?=$orphan['files'] ? zsm_h(implode(', ', array_column($orphan['files'], 'name'))) : '<span class="zsm-muted">keine</span>'?></td>
-          <td><?=zsm_h($orphan['files'] ? zsm_format_bytes((string) $orphan['files_size']) : '-')?></td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-  </div>
-</section>
-<?php endif; ?>
-
 <section class="zsm-panel" data-zsm-panel="overview">
   <h2>Snapshots</h2>
   <p>Vor dem Löschen erscheint eine Sicherheitsabfrage. Snapshots mit Klonen oder ZFS-Holds werden immer serverseitig abgelehnt.</p>
@@ -395,7 +369,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
           $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
           ?>
           <tr>
-            <td><?=zsm_h($snapshot['name'])?><?php if (isset($vmOrphanNames[$snapshot['name']])): ?> <span class="zsm-state-warn">verwaist</span><?php endif; ?></td>
+            <td><?=zsm_h($snapshot['name'])?><?php if (isset($vmOrphans[$snapshot['name']])): ?> <span class="zsm-state-warn" title="<?=zsm_h(zsm_vm_orphan_hint($vmOrphans[$snapshot['name']]))?>">verwaist</span><?php endif; ?></td>
             <td data-sort-value="<?=zsm_h($snapshot['creation'])?>"><?=zsm_h(zsm_format_timestamp($snapshot['creation']))?></td>
             <td data-sort-value="<?=zsm_h($snapshot['used'])?>"><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
             <td data-sort-value="<?=zsm_h($snapshot['referenced'])?>"><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
