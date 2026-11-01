@@ -1,0 +1,44 @@
+# Build-Zwischenstände
+.build/
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editoren und IDEs
+.idea/
+.vscode/
+.vs/
+*.code-workspace
+*.suo
+*.user
+
+# Temporäre Dateien und Sicherungskopien
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*.tmp
+*.temp
+*~
+
+# Logs und Testergebnisse
+*.log
+coverage/
+TestResults/
+*.trx
+
+# Lokale Konfiguration und Geheimnisse
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Release-Artefakte unter dist/ werden absichtlich versioniert.
+

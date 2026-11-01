@@ -1,0 +1,10 @@
+* text=auto
+
+*.sh text eol=lf
+src/**/scripts/* text eol=lf
+*.php text eol=lf
+*.page text eol=lf
+*.plg text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.txz binary

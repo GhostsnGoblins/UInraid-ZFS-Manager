@@ -1,0 +1,12 @@
+Menu="Tasks:65"
+Type="xmenu"
+Code="e965"
+Lock="true"
+Tabs="true"
+Cond="exec(\"grep -o '^ENABLED=.yes' /boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg 2>/dev/null\")"
+---
+<?php
+if (($var['mdState'] ?? '') !== 'STARTED'):
+?>
+<p class="notice">Das Array muss gestartet sein, damit ZFS-Datasets und Snapshots angezeigt werden.</p>
+<?php endif; ?>

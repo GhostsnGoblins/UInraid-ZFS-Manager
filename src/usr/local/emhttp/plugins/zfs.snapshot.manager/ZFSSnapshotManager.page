@@ -1,0 +1,57 @@
+Menu="OtherSettings"
+Title="ZFS Snapshot Manager"
+Icon="fa-history"
+---
+<?php
+require_once "$docroot/plugins/zfs.snapshot.manager/include/lib.php";
+
+$enabled = zsm_is_enabled();
+$csrfToken = isset($var['csrf_token']) ? (string) $var['csrf_token'] : '';
+?>
+
+<div class="title"><span class="left"><i class="title fa fa-history"></i>ZFS Snapshot Manager</span></div>
+
+<p>Hier wird nur festgelegt, ob der Snapshot Manager aktiv ist. Die Snapshots selbst verwaltest Du über den Hauptreiter <strong>Snapshots</strong>.</p>
+
+<form id="zsm-settings-form" method="post">
+  <input type="hidden" name="csrf_token" value="<?=zsm_h($csrfToken)?>">
+  <label for="zsm-enabled">ZFS Snapshot Manager aktivieren:</label>
+  <select id="zsm-enabled" name="enabled">
+    <option value="yes" <?=$enabled ? 'selected' : ''?>>Ja</option>
+    <option value="no" <?=$enabled ? '' : 'selected'?>>Nein</option>
+  </select>
+
+  <div style="margin-top:20px">
+    <button id="zsm-apply" type="submit">Anwenden</button>
+    <button type="button" onclick="done()">Fertig</button>
+  </div>
+</form>
+
+<p id="zsm-settings-message" style="display:none; margin-top:16px"></p>
+
+<script>
+$(function () {
+  $('#zsm-settings-form').on('submit', function (event) {
+    event.preventDefault();
+
+    var button = $('#zsm-apply');
+    var message = $('#zsm-settings-message');
+    button.prop('disabled', true);
+    message.hide().removeClass('notice warning').text('');
+
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/settings.php',
+      method: 'POST',
+      dataType: 'json',
+      data: $(this).serialize()
+    }).done(function (response) {
+      message.addClass('notice').text(response.message).show();
+      window.setTimeout(function () { window.location.reload(); }, 500);
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      message.addClass('notice warning').text(response.message || 'Die Einstellung konnte nicht gespeichert werden.').show();
+      button.prop('disabled', false);
+    });
+  });
+});
+</script>

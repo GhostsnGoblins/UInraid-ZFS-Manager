@@ -1,0 +1,108 @@
+#!/bin/bash
+
+set -uo pipefail
+export LC_ALL=C
+
+readonly PLUGIN_NAME="zfs.snapshot.manager"
+readonly LOG_FILE="${ZSM_LOG_FILE:-/var/log/${PLUGIN_NAME}.log}"
+readonly LOCK_FILE="${ZSM_LOCK_FILE:-/var/run/${PLUGIN_NAME}.lock}"
+readonly SNAPSHOT_PROPERTY="org.unraidzfsmanager:kind"
+
+fail() {
+  printf 'Fehler: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+find_zfs() {
+  local binary
+  binary="$(command -v zfs 2>/dev/null || true)"
+  [[ -n "$binary" && -x "$binary" ]] || fail "Der ZFS-Befehl wurde nicht gefunden." 127
+  printf '%s\n' "$binary"
+}
+
+is_valid_dataset() {
+  local dataset="$1"
+  [[ ${#dataset} -le 255 ]] || return 1
+  [[ "$dataset" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*(/[A-Za-z0-9][A-Za-z0-9_.:-]*)*$ ]]
+}
+
+write_log() {
+  local message="$1"
+  local timestamp
+  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+  umask 077
+  printf '%s %s\n' "$timestamp" "$message" >> "$LOG_FILE" 2>/dev/null || true
+  if command -v logger >/dev/null 2>&1; then
+    logger -t "$PLUGIN_NAME" -- "$message" 2>/dev/null || true
+  fi
+}
+
+list_datasets() {
+  local zfs_bin="$1"
+  "$zfs_bin" list -H -p -t filesystem,volume \
+    -o name,type,used,available,referenced,mountpoint -s name
+}
+
+list_snapshots() {
+  local zfs_bin="$1"
+  "$zfs_bin" list -H -p -t snapshot \
+    -o name,creation,used,referenced,clones -s creation
+}
+
+create_snapshot() {
+  local zfs_bin="$1"
+  local dataset="$2"
+  local timestamp snapshot
+
+  is_valid_dataset "$dataset" || fail "Ungültiger Dataset-Name." 64
+
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || fail "Eine andere Snapshot-Aktion läuft bereits." 75
+
+  "$zfs_bin" list -H -o name "$dataset" >/dev/null 2>&1 \
+    || fail "Das Dataset existiert nicht oder ist nicht zugänglich." 66
+
+  timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+  snapshot="${dataset}@uzm_manual_${timestamp}"
+
+  if "$zfs_bin" list -H -t snapshot -o name "$snapshot" >/dev/null 2>&1; then
+    fail "Für diese Sekunde existiert bereits ein Plugin-Snapshot." 73
+  fi
+
+  if "$zfs_bin" snapshot -o "${SNAPSHOT_PROPERTY}=manual" "$snapshot"; then
+    write_log "action=create dataset=${dataset} snapshot=${snapshot} result=success"
+    printf '%s\n' "$snapshot"
+    return 0
+  fi
+
+  write_log "action=create dataset=${dataset} snapshot=${snapshot} result=failed"
+  fail "ZFS konnte den Snapshot nicht erstellen." 74
+}
+
+main() {
+  local command="${1:-}"
+  local zfs_bin
+  zfs_bin="$(find_zfs)"
+
+  case "$command" in
+    list-datasets)
+      [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-datasets" 64
+      list_datasets "$zfs_bin"
+      ;;
+    list-snapshots)
+      [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-snapshots" 64
+      list_snapshots "$zfs_bin"
+      ;;
+    create)
+      [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager create DATASET" 64
+      create_snapshot "$zfs_bin" "$2"
+      ;;
+    *)
+      fail "Unbekannter Befehl. Erlaubt: list-datasets, list-snapshots, create." 64
+      ;;
+  esac
+}
+
+main "$@"
+

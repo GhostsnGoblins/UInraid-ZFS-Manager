@@ -1,0 +1,207 @@
+Menu="Snapshots:1"
+Title="ZFS Snapshots"
+Icon="fa-history"
+---
+<?php
+require_once "$docroot/plugins/zfs.snapshot.manager/include/lib.php";
+
+$pluginEnabled = zsm_is_enabled();
+
+if (!$pluginEnabled):
+?>
+<div class="zsm-notice">
+  Der ZFS Snapshot Manager ist deaktiviert. Aktiviere ihn unter <a href="/Settings/ZFSSnapshotManager">Einstellungen &gt; ZFS Snapshot Manager</a>.
+</div>
+<?php
+else:
+
+$datasetResult = zsm_run(['list-datasets']);
+$snapshotResult = zsm_run(['list-snapshots']);
+
+$datasets = $datasetResult['exitCode'] === 0
+    ? zsm_parse_tsv($datasetResult['stdout'], ['name', 'type', 'used', 'available', 'referenced', 'mountpoint'])
+    : [];
+$snapshots = $snapshotResult['exitCode'] === 0
+    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones'])
+    : [];
+
+$errors = [];
+if ($datasetResult['exitCode'] !== 0) {
+    $errors[] = $datasetResult['stderr'] ?: 'Datasets konnten nicht geladen werden.';
+}
+if ($snapshotResult['exitCode'] !== 0) {
+    $errors[] = $snapshotResult['stderr'] ?: 'Snapshots konnten nicht geladen werden.';
+}
+
+$csrfToken = isset($var['csrf_token']) ? (string) $var['csrf_token'] : '';
+$arrayState = strtoupper((string) ($var['mdState'] ?? 'UNKNOWN'));
+$arrayStarted = $arrayState === 'STARTED';
+$arrayStateLabels = [
+    'STARTED' => 'Gestartet',
+    'STARTING' => 'Wird gestartet',
+    'STOPPED' => 'Gestoppt',
+    'STOPPING' => 'Wird gestoppt',
+    'UNKNOWN' => 'Unbekannt',
+];
+$arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
+?>
+
+<style>
+.zsm-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:0 0 18px; }
+.zsm-card { border:1px solid var(--border-color, #606060); border-radius:5px; padding:14px; background:var(--table-background, transparent); }
+.zsm-card strong { display:block; font-size:24px; margin-top:4px; }
+.zsm-panel { border:1px solid var(--border-color, #606060); border-radius:5px; padding:16px; margin:0 0 18px; }
+.zsm-panel h2 { margin-top:0; }
+.zsm-table-wrap { overflow-x:auto; }
+.zsm-table { width:100%; border-collapse:collapse; }
+.zsm-table th, .zsm-table td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border-color, #606060); white-space:nowrap; }
+.zsm-table th { font-weight:600; }
+.zsm-notice { padding:12px 14px; margin:0 0 16px; border-left:4px solid #ffb300; background:rgba(255,179,0,.12); }
+.zsm-error { border-left-color:#d32f2f; background:rgba(211,47,47,.12); }
+.zsm-success { border-left-color:#2e7d32; background:rgba(46,125,50,.12); }
+.zsm-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.zsm-actions select { min-width:280px; }
+.zsm-muted { opacity:.78; }
+.zsm-toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin:0 0 14px; }
+.zsm-toolbar p { margin:0; }
+.zsm-state-good { color:#2e7d32; }
+.zsm-state-warn { color:#b26a00; }
+</style>
+
+<div class="zsm-toolbar">
+  <p><strong>ZFS Snapshot Manager <?=zsm_h(ZSM_VERSION)?></strong></p>
+  <button type="button" onclick="window.location.reload()">Aktualisieren</button>
+</div>
+
+<div class="zsm-notice">
+  Testversion <?=zsm_h(ZSM_VERSION)?>: Diese Seite kann Snapshots anzeigen und neue manuelle Snapshots erstellen. Löschen, Rollback, Retention und Zeitpläne sind nicht enthalten.
+</div>
+
+<?php if (!$arrayStarted && !$datasets): ?>
+  <div class="zsm-notice">
+    Das Unraid-Array ist aktuell „<?=zsm_h($arrayStateLabel)?>“. Starte das Array unter „Main“ und klicke anschließend auf „Aktualisieren“.
+  </div>
+<?php endif; ?>
+
+<?php foreach ($errors as $error): ?>
+  <div class="zsm-notice zsm-error"><?=zsm_h($error)?></div>
+<?php endforeach; ?>
+
+<div id="zsm-message" class="zsm-notice" style="display:none"></div>
+
+<div class="zsm-summary">
+  <div class="zsm-card">
+    <span>Unraid-Array</span>
+    <strong class="<?=$arrayStarted ? 'zsm-state-good' : 'zsm-state-warn'?>"><?=zsm_h($arrayStateLabel)?></strong>
+  </div>
+  <div class="zsm-card"><span>Datasets und ZVOLs</span><strong><?=count($datasets)?></strong></div>
+  <div class="zsm-card"><span>Snapshots</span><strong><?=count($snapshots)?></strong></div>
+  <div class="zsm-card"><span>Schreibfunktionen</span><strong>1</strong><span class="zsm-muted">Nur Snapshot erstellen</span></div>
+</div>
+
+<section class="zsm-panel">
+  <h2>Manuellen Snapshot erstellen</h2>
+  <p>Der Name wird sicher und eindeutig aus der UTC-Zeit erzeugt. Es werden keine vorhandenen Daten überschrieben.</p>
+  <?php if ($datasets): ?>
+    <form id="zsm-create-form" class="zsm-actions" method="post">
+      <label for="zsm-dataset">Dataset:</label>
+      <select id="zsm-dataset" name="dataset" required>
+        <?php foreach ($datasets as $dataset): ?>
+          <option value="<?=zsm_h($dataset['name'])?>"><?=zsm_h($dataset['name'])?> (<?=zsm_h($dataset['type'])?>)</option>
+        <?php endforeach; ?>
+      </select>
+      <button id="zsm-create-button" type="submit">Snapshot erstellen</button>
+    </form>
+  <?php elseif (!$arrayStarted): ?>
+    <p class="zsm-muted">Nach dem Array-Start stehen die ZFS-Datasets zur Auswahl.</p>
+  <?php else: ?>
+    <p class="zsm-muted">Kein verwendbares ZFS-Dataset gefunden.</p>
+  <?php endif; ?>
+</section>
+
+<section class="zsm-panel">
+  <h2>Datasets</h2>
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th>Name</th><th>Typ</th><th>Belegt</th><th>Verfügbar</th><th>Referenziert</th><th>Mountpoint</th></tr></thead>
+      <tbody>
+      <?php if (!$datasets && !$arrayStarted): ?>
+        <tr><td colspan="6">Das Array ist noch nicht gestartet.</td></tr>
+      <?php elseif (!$datasets): ?>
+        <tr><td colspan="6">Keine ZFS-Datasets gefunden.</td></tr>
+      <?php else: ?>
+        <?php foreach ($datasets as $dataset): ?>
+          <tr>
+            <td><?=zsm_h($dataset['name'])?></td>
+            <td><?=zsm_h($dataset['type'])?></td>
+            <td><?=zsm_h(zsm_format_bytes($dataset['used']))?></td>
+            <td><?=zsm_h(zsm_format_bytes($dataset['available']))?></td>
+            <td><?=zsm_h(zsm_format_bytes($dataset['referenced']))?></td>
+            <td><?=zsm_h($dataset['mountpoint'])?></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="zsm-panel">
+  <h2>Snapshots</h2>
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th>Name</th><th>Erstellt</th><th>Belegt</th><th>Referenziert</th><th>Klone</th></tr></thead>
+      <tbody>
+      <?php if (!$snapshots && !$arrayStarted): ?>
+        <tr><td colspan="5">Das Array ist noch nicht gestartet.</td></tr>
+      <?php elseif (!$snapshots): ?>
+        <tr><td colspan="5">Keine Snapshots gefunden.</td></tr>
+      <?php else: ?>
+        <?php foreach (array_reverse($snapshots) as $snapshot): ?>
+          <tr>
+            <td><?=zsm_h($snapshot['name'])?></td>
+            <td><?=zsm_h(zsm_format_timestamp($snapshot['creation']))?></td>
+            <td><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
+            <td><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
+            <td><?=zsm_h($snapshot['clones'])?></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+$(function () {
+  $('#zsm-create-form').on('submit', function (event) {
+    event.preventDefault();
+
+    var button = $('#zsm-create-button');
+    var message = $('#zsm-message');
+    button.prop('disabled', true).text('Snapshot wird erstellt...');
+    message.hide().removeClass('zsm-error zsm-success');
+
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/action.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: 'create',
+        dataset: $('#zsm-dataset').val()
+      }
+    }).done(function (response) {
+      message.addClass('zsm-success').text(response.message + ' ' + response.snapshot).show();
+      window.setTimeout(function () { window.location.reload(); }, 900);
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      message.addClass('zsm-error').text(response.message || 'Der Snapshot konnte nicht erstellt werden.').show();
+      button.prop('disabled', false).text('Snapshot erstellen');
+    });
+  });
+});
+</script>
+
+<?php endif; ?>
+

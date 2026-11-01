@@ -1,0 +1,71 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name "zfs.snapshot.manager">
+<!ENTITY author "Claudio">
+<!ENTITY version "0.2.1">
+]>
+<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
+<CHANGES><![CDATA[
+### 0.2.1
+
+- Adds the Gitea-backed Unraid update channel
+- Adds a top-level Snapshots tab beside Docker and VMs
+- Keeps only the enable/disable switch under Settings
+- Blocks write actions while the plugin is disabled
+- Preserves all existing snapshots when disabled
+]]></CHANGES>
+
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.1-noarch-1.txz">
+<URL>https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.2.1-noarch-1.txz</URL>
+<SHA256>2aeb63a3efa89f6e06858d5c46902eca1c5c1ba0bb0f41fb226417b92fae7c85</SHA256>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+set -euo pipefail
+
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.2.1-noarch-1.txz"
+EXPECTED_SHA256="2aeb63a3efa89f6e06858d5c46902eca1c5c1ba0bb0f41fb226417b92fae7c85"
+
+if [[ ! -f "$PACKAGE" ]]; then
+  echo "Missing local test package: $PACKAGE"
+  exit 1
+fi
+
+ACTUAL_SHA256="$(sha256sum "$PACKAGE" | awk '{print $1}')"
+if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+  echo "Package checksum mismatch. Installation stopped."
+  exit 1
+fi
+
+/sbin/upgradepkg --install-new --reinstall "$PACKAGE"
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.2.1-noarch-1.txz' -delete
+
+CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  printf 'ENABLED="yes"\n' > "$CONFIG_FILE"
+fi
+chmod 644 "$CONFIG_FILE"
+
+chown -R root:root /usr/local/emhttp/plugins/zfs.snapshot.manager
+find /usr/local/emhttp/plugins/zfs.snapshot.manager -type d -exec chmod 755 {} \;
+find /usr/local/emhttp/plugins/zfs.snapshot.manager -type f -exec chmod 644 {} \;
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager
+
+echo "ZFS Snapshot Manager 0.2.1 installed."
+echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
+echo "Manage snapshots from the top-level Snapshots tab."
+]]></INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE><![CDATA[
+removepkg zfs.snapshot.manager-0.2.1-noarch-1 2>/dev/null || true
+rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
+rm -rf /boot/config/plugins/zfs.snapshot.manager
+rm -f /var/log/zfs.snapshot.manager.log
+rm -f /var/run/zfs.snapshot.manager.lock
+echo "ZFS Snapshot Manager removed. Existing ZFS snapshots were not changed."
+]]></INLINE>
+</FILE>
+</PLUGIN>
