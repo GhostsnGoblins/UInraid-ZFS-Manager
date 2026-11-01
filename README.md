@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.7.1
+## Funktionsumfang 0.7.2
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -17,7 +17,8 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - abgelaufene automatische Snapshots spätestens bei der nächsten 15-Minuten-Prüfung entfernen
 - einen Zeitplan sofort ausführen und die aktuell fälligen Löschungen vorher anzeigen
 - ausschließlich eindeutig gekennzeichnete manuelle Plugin-Snapshots löschen
-- fremde Snapshots nach Eingabe ihres vollständigen Namens löschen
+- fremde Snapshots nach einer Sicherheitsabfrage löschen
+- verwaiste VM-Snapshots samt `.mem`- und `.running`-Dateien anzeigen
 - Löschvorgänge bei vorhandenen Klonen oder ZFS-Holds blockieren
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
 - pro Dataset eine private, schreibgeschützte Snapshot-Freigabe für ausgewählte Benutzer einrichten
@@ -64,7 +65,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.7.1-noarch-1.txz`
+- `zfs.snapshot.manager-0.7.2-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -132,7 +133,7 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Vor der Bereinigung einer rekursiven Snapshot-Gruppe werden Eigentum, Klone und Holds aller fälligen Mitglieder geprüft.
 - Die nicht destruktive Löschvorschau zeigt nur bereits abgelaufene Snapshots derselben Regel.
 - Cron ruft nur die stabile Regel-ID auf. Dataset und Aufbewahrungsdauer werden bei jedem Lauf erneut aus der serverseitigen Konfiguration gelesen.
-- Fremde Snapshots erfordern die exakte Eingabe ihres vollständigen Namens in Oberfläche und Backend.
+- Fremde Snapshots verlangen im Backend weiterhin den vollständigen Namen als Bestätigung, die Oberfläche übergibt ihn nach der Sicherheitsabfrage.
 - Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
 - Es existiert kein Rollback-, Clone- oder Mount-Endpunkt.
 

@@ -11,7 +11,8 @@ const ZSM_SHARES_FILE = '/boot/config/plugins/zfs.snapshot.manager/shares.json';
 const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-snapshots.conf.new';
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
-const ZSM_VERSION = '0.7.1';
+const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
+const ZSM_VERSION = '0.7.2';
 
 function zsm_is_enabled(): bool
 {
@@ -604,6 +605,98 @@ function zsm_apply_shares(): array
         return ['exitCode' => 1, 'stdout' => '', 'stderr' => 'Die Samba-Konfiguration konnte nicht geschrieben werden.', 'timedOut' => false];
     }
     return zsm_run(['apply-samba-config'], 60);
+}
+
+/**
+ * @param list<array<string,string>> $snapshots
+ * @return array<string,array{count:int,latest:int}> Anzahl und neuester Zeitpunkt je Dataset
+ */
+function zsm_snapshot_stats(array $snapshots): array
+{
+    $stats = [];
+    foreach ($snapshots as $snapshot) {
+        $dataset = explode('@', $snapshot['name'], 2)[0];
+        $stats[$dataset] ??= ['count' => 0, 'latest' => 0];
+        $stats[$dataset]['count']++;
+        if (ctype_digit($snapshot['creation'])) {
+            $stats[$dataset]['latest'] = max($stats[$dataset]['latest'], (int) $snapshot['creation']);
+        }
+    }
+    return $stats;
+}
+
+/** @return array<string,list<array{name:string,size:int}>> Dateien je Snapshot-ID */
+function zsm_vm_snapshot_files(string $directory): array
+{
+    $files = [];
+    foreach (is_dir($directory) ? (scandir($directory) ?: []) : [] as $name) {
+        if (preg_match('/^(?:(S[0-9]{14})\.running|memory(S[0-9]{14})\.mem)$/D', $name, $match) !== 1) {
+            continue;
+        }
+        $path = $directory . '/' . $name;
+        if (is_file($path) && !is_link($path)) {
+            $files[$match[1] ?: $match[2]][] = ['name' => $name, 'size' => (int) filesize($path)];
+        }
+    }
+    return $files;
+}
+
+/**
+ * Findet VM-Snapshots, die Unraid nicht mehr fuehrt. Die VM-Oberflaeche entfernt bei
+ * nativen ZFS-Snapshots nur den Listeneintrag, Snapshot und Dateien bleiben liegen.
+ * Ohne lesbare snapshots.db wird nichts gemeldet, die Pruefung bleibt reine Anzeige.
+ *
+ * @param list<array<string,string>> $snapshots
+ * @param list<array<string,string>> $filesystems
+ * @return list<array{vm:string,dataset:string,id:string,snapshot:string,used:string,files:list<array{name:string,size:int}>,files_size:int}>
+ */
+function zsm_find_vm_orphans(array $snapshots, array $filesystems, string $databaseRoot = ZSM_LIBVIRT_SNAPSHOT_DB, string $mountRoot = '/mnt/'): array
+{
+    $byDataset = [];
+    foreach ($snapshots as $snapshot) {
+        [$dataset, $id] = array_pad(explode('@', $snapshot['name'], 2), 2, '');
+        if (preg_match('/^S[0-9]{14}$/D', $id) === 1) {
+            $byDataset[$dataset][$id] = $snapshot['used'];
+        }
+    }
+
+    $orphans = [];
+    foreach ($filesystems as $filesystem) {
+        $mountpoint = $filesystem['mountpoint'];
+        if ($filesystem['mounted'] !== 'yes' || !str_starts_with($mountpoint, $mountRoot) || str_contains($mountpoint, '/..')) {
+            continue;
+        }
+
+        $vm = basename($filesystem['name']);
+        $databasePath = $databaseRoot . '/' . $vm . '/snapshots.db';
+        $database = is_file($databasePath) ? file_get_contents($databasePath) : false;
+        if (!is_string($database) || $database === '') {
+            continue;
+        }
+
+        $dataset = $filesystem['name'];
+        $zfsSnapshots = $byDataset[$dataset] ?? [];
+        $files = zsm_vm_snapshot_files($mountpoint);
+        foreach (array_keys($zfsSnapshots + $files) as $id) {
+            $id = (string) $id;
+            if (str_contains($database, $id)) {
+                continue;
+            }
+            $orphanFiles = $files[$id] ?? [];
+            $orphans[] = [
+                'vm' => $vm,
+                'dataset' => $dataset,
+                'id' => $id,
+                'snapshot' => isset($zfsSnapshots[$id]) ? $dataset . '@' . $id : '',
+                'used' => $zfsSnapshots[$id] ?? '',
+                'files' => $orphanFiles,
+                'files_size' => array_sum(array_column($orphanFiles, 'size')),
+            ];
+        }
+    }
+
+    usort($orphans, static fn (array $first, array $second): int => strcmp($second['id'], $first['id']));
+    return $orphans;
 }
 
 /** @return list<array<string,string>> */

@@ -34,6 +34,9 @@ $shareUsers = zsm_load_unraid_users();
 $snapshotShares = zsm_resolve_shares(zsm_load_shares(), $filesystems, $shareUsers);
 $storedShareUsers = array_column(zsm_load_shares(), 'users', 'id');
 $serverName = (string) ($var['NAME'] ?? 'Tower');
+$vmOrphans = zsm_find_vm_orphans($snapshots, $filesystems);
+$vmOrphanNames = array_flip(array_filter(array_column($vmOrphans, 'snapshot')));
+$snapshotStats = zsm_snapshot_stats($snapshots);
 
 $errors = [];
 if ($datasetResult['exitCode'] !== 0) {
@@ -89,6 +92,12 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-share-users { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px 16px; }
 .zsm-share-users label { flex-direction:row; align-items:center; gap:6px; }
 .zsm-share-users input { width:auto; margin:0; }
+.zsm-tabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 18px; border-bottom:2px solid var(--border-color, #606060); }
+.zsm-tabs button { margin:0; padding:9px 16px; }
+.zsm-tabs button.zsm-tab-active { background:#ff8c00 !important; border-color:#ff8c00 !important; color:#fff !important; }
+.zsm-table th[data-sort] { cursor:pointer; user-select:none; }
+.zsm-table th[aria-sort="ascending"]::after { content:" \25B2"; }
+.zsm-table th[aria-sort="descending"]::after { content:" \25BC"; }
 </style>
 
 <div class="zsm-toolbar">
@@ -122,7 +131,13 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   <div class="zsm-card"><span>Automatische Regeln</span><strong><?=count($policies)?></strong></div>
 </div>
 
-<section class="zsm-panel">
+<div class="zsm-tabs" role="tablist">
+  <button type="button" role="tab" data-zsm-tab="overview">Übersicht</button>
+  <button type="button" role="tab" data-zsm-tab="policies">Automatische Snapshots (<?=count($policies)?>)</button>
+  <button type="button" role="tab" data-zsm-tab="shares">Freigaben (<?=count($snapshotShares)?>)</button>
+</div>
+
+<section class="zsm-panel" data-zsm-panel="overview">
   <h2>Manuellen Snapshot erstellen</h2>
   <p>Der Name wird sicher und eindeutig aus der UTC-Zeit erzeugt. Es werden keine vorhandenen Daten überschrieben.</p>
   <?php if ($datasets): ?>
@@ -142,7 +157,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   <?php endif; ?>
 </section>
 
-<section class="zsm-panel">
+<section class="zsm-panel" data-zsm-panel="policies">
   <h2>Automatische Snapshots</h2>
   <p>Wähle das Dataset, den Rhythmus und die Aufbewahrungsdauer. Abgelaufene Snapshots werden spätestens bei der nächsten Bereinigungsprüfung innerhalb von 15 Minuten entfernt. Ein Monat entspricht dabei 30 Tagen. Manuelle und fremde Snapshots bleiben unberührt.</p>
   <?php if ($datasets): ?>
@@ -238,7 +253,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
 </section>
 
-<section class="zsm-panel">
+<section class="zsm-panel" data-zsm-panel="shares">
   <h2>Snapshot-Freigaben</h2>
   <p>Pro Dataset zeigt eine private, schreibgeschützte SMB-Freigabe automatisch alle Snapshots als Ordner an. Einzelne Snapshots müssen nicht eingerichtet werden. Die Rechte der normalen Unraid-Freigabe werden nicht übernommen.</p>
   <div class="zsm-notice">Wer Zugriff erhält, kann auch ältere und inzwischen gelöschte Dateien lesen. Untergeordnete Datasets sind nicht enthalten und brauchen eine eigene Freigabe.</div>
@@ -304,24 +319,27 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
 </section>
 
-<section class="zsm-panel">
+<section class="zsm-panel" data-zsm-panel="overview">
   <h2>Datasets</h2>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th>Name</th><th>Typ</th><th>Belegt</th><th>Verfügbar</th><th>Referenziert</th><th>Mountpoint</th></tr></thead>
+      <thead><tr><th data-sort="text">Name</th><th data-sort="text">Typ</th><th data-sort="number">Snapshots</th><th data-sort="number">Letzter Snapshot</th><th data-sort="number">Belegt</th><th data-sort="number">Verfügbar</th><th data-sort="number">Referenziert</th><th data-sort="text">Mountpoint</th></tr></thead>
       <tbody>
       <?php if (!$datasets && !$arrayStarted): ?>
-        <tr><td colspan="6">Das Array ist noch nicht gestartet.</td></tr>
+        <tr><td colspan="8">Das Array ist noch nicht gestartet.</td></tr>
       <?php elseif (!$datasets): ?>
-        <tr><td colspan="6">Keine ZFS-Datasets gefunden.</td></tr>
+        <tr><td colspan="8">Keine ZFS-Datasets gefunden.</td></tr>
       <?php else: ?>
         <?php foreach ($datasets as $dataset): ?>
+          <?php $datasetStats = $snapshotStats[$dataset['name']] ?? ['count' => 0, 'latest' => 0]; ?>
           <tr>
             <td><?=zsm_h($dataset['name'])?></td>
             <td><?=zsm_h($dataset['type'])?></td>
-            <td><?=zsm_h(zsm_format_bytes($dataset['used']))?></td>
-            <td><?=zsm_h(zsm_format_bytes($dataset['available']))?></td>
-            <td><?=zsm_h(zsm_format_bytes($dataset['referenced']))?></td>
+            <td data-sort-value="<?=$datasetStats['count']?>"><?=$datasetStats['count']?></td>
+            <td data-sort-value="<?=$datasetStats['latest']?>"><?=zsm_h($datasetStats['latest'] > 0 ? zsm_format_timestamp((string) $datasetStats['latest']) : '-')?></td>
+            <td data-sort-value="<?=zsm_h($dataset['used'])?>"><?=zsm_h(zsm_format_bytes($dataset['used']))?></td>
+            <td data-sort-value="<?=zsm_h($dataset['available'])?>"><?=zsm_h(zsm_format_bytes($dataset['available']))?></td>
+            <td data-sort-value="<?=zsm_h($dataset['referenced'])?>"><?=zsm_h(zsm_format_bytes($dataset['referenced']))?></td>
             <td><?=zsm_h($dataset['mountpoint'])?></td>
           </tr>
         <?php endforeach; ?>
@@ -331,12 +349,37 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   </div>
 </section>
 
-<section class="zsm-panel">
-  <h2>Snapshots</h2>
-  <p>Eigene Plugin-Snapshots verwenden eine einfache Sicherheitsabfrage. Bei fremden Snapshots muss der vollständige Name eingegeben werden. Snapshots mit Klonen oder ZFS-Holds werden immer serverseitig abgelehnt.</p>
+<?php if ($vmOrphans): ?>
+<section class="zsm-panel" id="zsm-vm-orphans" data-zsm-panel="overview">
+  <h2>Verwaiste VM-Snapshots</h2>
+  <p>Diese Snapshots stehen nicht mehr in der Snapshot-Liste von Unraid. Die VM-Oberfläche entfernt bei nativen ZFS-Snapshots nur den Listeneintrag, ZFS-Snapshot und Dateien bleiben liegen und belegen weiter Platz.</p>
+  <p class="zsm-muted">Den ZFS-Snapshot löschst du unten über "Extern löschen". Die Dateien im VM-Ordner entfernt das Plugin nicht, prüfe und lösche sie von Hand. Die <code>.qcow2</code> der VM gehört nicht dazu.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th>Name</th><th>Erstellt</th><th>Belegt</th><th>Referenziert</th><th>Klone</th><th>Aktion</th></tr></thead>
+      <thead><tr><th>VM</th><th>Snapshot-ID</th><th>ZFS-Snapshot</th><th>Belegt</th><th>Dateien</th><th>Größe der Dateien</th></tr></thead>
+      <tbody>
+      <?php foreach ($vmOrphans as $orphan): ?>
+        <tr>
+          <td><?=zsm_h($orphan['vm'])?></td>
+          <td><?=zsm_h($orphan['id'])?></td>
+          <td><?=$orphan['snapshot'] !== '' ? zsm_h($orphan['snapshot']) : '<span class="zsm-muted">bereits gelöscht</span>'?></td>
+          <td><?=zsm_h($orphan['snapshot'] !== '' ? zsm_format_bytes($orphan['used']) : '-')?></td>
+          <td><?=$orphan['files'] ? zsm_h(implode(', ', array_column($orphan['files'], 'name'))) : '<span class="zsm-muted">keine</span>'?></td>
+          <td><?=zsm_h($orphan['files'] ? zsm_format_bytes((string) $orphan['files_size']) : '-')?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+<?php endif; ?>
+
+<section class="zsm-panel" data-zsm-panel="overview">
+  <h2>Snapshots</h2>
+  <p>Vor dem Löschen erscheint eine Sicherheitsabfrage. Snapshots mit Klonen oder ZFS-Holds werden immer serverseitig abgelehnt.</p>
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th data-sort="text">Name</th><th data-sort="number">Erstellt</th><th data-sort="number">Belegt</th><th data-sort="number">Referenziert</th><th data-sort="text">Klone</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$snapshots && !$arrayStarted): ?>
         <tr><td colspan="6">Das Array ist noch nicht gestartet.</td></tr>
@@ -352,10 +395,10 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
           $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
           ?>
           <tr>
-            <td><?=zsm_h($snapshot['name'])?></td>
-            <td><?=zsm_h(zsm_format_timestamp($snapshot['creation']))?></td>
-            <td><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
-            <td><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
+            <td><?=zsm_h($snapshot['name'])?><?php if (isset($vmOrphanNames[$snapshot['name']])): ?> <span class="zsm-state-warn">verwaist</span><?php endif; ?></td>
+            <td data-sort-value="<?=zsm_h($snapshot['creation'])?>"><?=zsm_h(zsm_format_timestamp($snapshot['creation']))?></td>
+            <td data-sort-value="<?=zsm_h($snapshot['used'])?>"><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
+            <td data-sort-value="<?=zsm_h($snapshot['referenced'])?>"><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
             <td><?=zsm_h($snapshot['clones'])?></td>
             <td>
               <?php if ($hasClones): ?>
@@ -380,6 +423,76 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 <script>
 $(function () {
   var policyDatasets = <?=json_encode(array_column($datasets, 'name'), JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+
+  function showTab(name) {
+    if ($('[data-zsm-tab="' + name + '"]').length === 0) {
+      name = 'overview';
+    }
+    $('[data-zsm-tab]').each(function () {
+      var active = $(this).data('zsm-tab') === name;
+      $(this).toggleClass('zsm-tab-active', active).attr('aria-selected', active ? 'true' : 'false');
+    });
+    $('[data-zsm-panel]').each(function () {
+      $(this).toggle($(this).data('zsm-panel') === name);
+    });
+    try {
+      window.sessionStorage.setItem('zsm-tab', name);
+    } catch (error) {
+      // Ohne Speicher startet die Seite nach dem Neuladen wieder auf der Übersicht.
+    }
+  }
+
+  $('[data-zsm-tab]').on('click', function () {
+    showTab(String($(this).data('zsm-tab')));
+  });
+
+  var storedTab = 'overview';
+  try {
+    storedTab = window.sessionStorage.getItem('zsm-tab') || 'overview';
+  } catch (error) {
+    storedTab = 'overview';
+  }
+  showTab(storedTab);
+
+  function sortValue(row, index, type) {
+    var cell = row.children().eq(index);
+    var raw = cell.attr('data-sort-value');
+    if (type === 'number') {
+      var number = parseFloat(raw === undefined ? cell.text() : raw);
+      return isNaN(number) ? -1 : number;
+    }
+    return $.trim(cell.text());
+  }
+
+  function sortTable(header) {
+    var table = header.closest('table');
+    var body = table.children('tbody');
+    var rows = body.children('tr').get().map(function (row) { return $(row); });
+    if (rows.length < 2) {
+      return;
+    }
+    var index = header.index();
+    var type = String(header.attr('data-sort'));
+    var direction = header.attr('aria-sort') === 'ascending' ? -1 : 1;
+    rows.sort(function (first, second) {
+      var a = sortValue(first, index, type);
+      var b = sortValue(second, index, type);
+      var result = type === 'number' ? a - b : a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
+      return result * direction;
+    });
+    table.find('th[aria-sort]').removeAttr('aria-sort');
+    header.attr('aria-sort', direction === 1 ? 'ascending' : 'descending');
+    rows.forEach(function (row) { body.append(row); });
+  }
+
+  $('th[data-sort]').attr('tabindex', '0').on('click', function () {
+    sortTable($(this));
+  }).on('keydown', function (event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      sortTable($(this));
+    }
+  });
 
   function showMessage(text, isError) {
     $('#zsm-message')
@@ -641,26 +754,14 @@ $(function () {
     var originalLabel = external ? 'Extern löschen' : 'Löschen';
     var message = $('#zsm-message');
     var action = external ? 'delete-external' : 'delete';
-    var typedConfirmation = '';
     message.hide().removeClass('zsm-error zsm-success');
 
+    var confirmation = 'Snapshot wirklich unwiderruflich löschen?\n\n' + snapshot + '\n\nDiese Aktion kann nicht rückgängig gemacht werden.';
     if (external) {
-      typedConfirmation = window.prompt(
-        'Dieser Snapshot wurde nicht von diesem Plugin erstellt.\n\n' +
-        'Zum unwiderruflichen Löschen den vollständigen Namen eingeben:\n\n' + snapshot
-      );
-      if (typedConfirmation === null) {
-        return;
-      }
-      if (typedConfirmation !== snapshot) {
-        message.addClass('zsm-error').text('Der eingegebene Snapshot-Name stimmt nicht exakt überein.').show();
-        return;
-      }
-    } else {
-      var confirmation = 'Snapshot wirklich unwiderruflich löschen?\n\n' + snapshot + '\n\nDiese Aktion kann nicht rückgängig gemacht werden.';
-      if (!window.confirm(confirmation)) {
-        return;
-      }
+      confirmation = 'Dieser Snapshot wurde nicht von diesem Plugin erstellt.\n\n' + confirmation;
+    }
+    if (!window.confirm(confirmation)) {
+      return;
     }
 
     button.prop('disabled', true).text('Wird gelöscht...');
@@ -671,7 +772,7 @@ $(function () {
       snapshot: snapshot
     };
     if (external) {
-      requestData.confirmation = typedConfirmation;
+      requestData.confirmation = snapshot;
     }
 
     $.ajax({

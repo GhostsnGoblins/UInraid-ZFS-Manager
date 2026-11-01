@@ -64,4 +64,61 @@ file_put_contents($iniFile, "[\"Medien\"]\nname=\"Medien\"\n");
 check(in_array('medien', zsm_reserved_share_names($iniFile), true), 'bestehende Freigaben sind reserviert');
 unlink($iniFile);
 
+$orphanRoot = sys_get_temp_dir() . '/zsm-orphans-' . bin2hex(random_bytes(4));
+mkdir("$orphanRoot/db/nox", 0777, true);
+mkdir("$orphanRoot/db/Kairo", 0777, true);
+mkdir("$orphanRoot/vm/nox", 0777, true);
+mkdir("$orphanRoot/vm/Kairo", 0777, true);
+mkdir("$orphanRoot/vm/ohne-liste", 0777, true);
+file_put_contents("$orphanRoot/db/nox/snapshots.db", '{"S20261101120000":{"name":"S20261101120000"}}');
+file_put_contents("$orphanRoot/db/Kairo/snapshots.db", '[]');
+file_put_contents("$orphanRoot/vm/nox/S20261101110000.running", 'abc');
+file_put_contents("$orphanRoot/vm/nox/memoryS20261101110000.mem", 'abcde');
+file_put_contents("$orphanRoot/vm/nox/S20261101120000.running", 'x');
+file_put_contents("$orphanRoot/vm/nox/nox.qcow2", 'x');
+file_put_contents("$orphanRoot/vm/Kairo/memoryS20261101100000.mem", 'ab');
+file_put_contents("$orphanRoot/vm/ohne-liste/S20261101090000.running", 'x');
+$orphanSnapshots = [
+    ['name' => 'vm/domains/nox@S20261101110000', 'used' => '100'],
+    ['name' => 'vm/domains/nox@S20261101120000', 'used' => '100'],
+    ['name' => 'vm/domains/nox@S20261101130000', 'used' => '100'],
+    ['name' => 'vm/domains/nox@uzm_manual_20261101T120000Z', 'used' => '100'],
+    ['name' => 'vm/domains/ohne-liste@S20261101090000', 'used' => '100'],
+];
+$orphanFiles = zsm_vm_snapshot_files("$orphanRoot/vm/nox");
+check(array_keys($orphanFiles) === ['S20261101110000', 'S20261101120000'], 'nur VM-Snapshot-Dateien werden erfasst');
+check(array_sum(array_column($orphanFiles['S20261101110000'], 'size')) === 8, 'Dateigrößen werden summiert');
+
+$mountRoot = "$orphanRoot/vm/";
+$mounted = [
+    ['guid' => '1', 'name' => 'vm/domains/nox', 'mountpoint' => "{$mountRoot}nox", 'mounted' => 'yes'],
+    ['guid' => '2', 'name' => 'vm/domains/Kairo', 'mountpoint' => "{$mountRoot}Kairo", 'mounted' => 'yes'],
+    ['guid' => '3', 'name' => 'vm/domains/ohne-liste', 'mountpoint' => "{$mountRoot}ohne-liste", 'mounted' => 'yes'],
+];
+$orphans = zsm_find_vm_orphans($orphanSnapshots, $mounted, "$orphanRoot/db", $mountRoot);
+check(array_column($orphans, 'id') === ['S20261101130000', 'S20261101110000', 'S20261101100000'], 'nur nicht gelistete Snapshots gelten als verwaist');
+check($orphans[1]['snapshot'] === 'vm/domains/nox@S20261101110000' && $orphans[1]['files_size'] === 8, 'Snapshot und Dateien werden zusammengeführt');
+check($orphans[0]['files'] === [], 'Snapshot ohne Dateien wird gemeldet');
+check($orphans[2]['snapshot'] === '' && $orphans[2]['vm'] === 'Kairo', 'Dateien ohne ZFS-Snapshot werden gemeldet');
+check(zsm_find_vm_orphans($orphanSnapshots, $mounted, "$orphanRoot/db") === [], 'Mountpoint außerhalb des Wurzelpfads wird nicht gelesen');
+check(zsm_find_vm_orphans($orphanSnapshots, [['mounted' => 'no'] + $mounted[0]], "$orphanRoot/db", $mountRoot) === [], 'nicht eingehängtes Dataset wird übersprungen');
+file_put_contents("$orphanRoot/db/nox/snapshots.db", '');
+check(zsm_find_vm_orphans($orphanSnapshots, [$mounted[0]], "$orphanRoot/db", $mountRoot) === [], 'leere Datenbank meldet nichts');
+foreach (['vm/nox', 'vm/Kairo', 'vm/ohne-liste', 'db/nox', 'db/Kairo'] as $directory) {
+    array_map('unlink', glob("$orphanRoot/$directory/*"));
+    rmdir("$orphanRoot/$directory");
+}
+rmdir("$orphanRoot/vm");
+rmdir("$orphanRoot/db");
+rmdir($orphanRoot);
+
+$stats = zsm_snapshot_stats([
+    ['name' => 'tank/a@eins', 'creation' => '100'],
+    ['name' => 'tank/a@zwei', 'creation' => '300'],
+    ['name' => 'tank/a@drei', 'creation' => '200'],
+    ['name' => 'tank/b@eins', 'creation' => 'kaputt'],
+]);
+check($stats['tank/a'] === ['count' => 3, 'latest' => 300], 'Anzahl und neuester Snapshot je Dataset');
+check($stats['tank/b'] === ['count' => 1, 'latest' => 0], 'ungültiger Zeitstempel wird ignoriert');
+
 echo 'PHP-Tests erfolgreich.' . PHP_EOL;

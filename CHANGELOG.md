@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2
+
+- verwaiste VM-Snapshots samt `.mem`- und `.running`-Dateien anzeigen, die Unraid nicht mehr in seiner Liste führt
+- automatische Snapshots und Freigaben in eigene Tabs verschieben
+- Dataset- und Snapshot-Tabelle per Klick auf die Überschrift sortieren
+- Anzahl und Datum des letzten Snapshots in der Dataset-Tabelle anzeigen
+- `Extern löschen` verwendet dieselbe einfache Sicherheitsabfrage wie `Löschen`
+
 ## 0.7.1
 
 - neue Snapshot-Freigaben standardmäßig als `snapshot-<dataset>` vorschlagen
