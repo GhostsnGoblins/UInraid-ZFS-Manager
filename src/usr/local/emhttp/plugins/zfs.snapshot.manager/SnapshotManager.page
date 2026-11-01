@@ -91,6 +91,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-share-users { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px 16px; }
 .zsm-share-users label { flex-direction:row; align-items:center; gap:6px; }
 .zsm-share-users input { width:auto; margin:0; }
+#zsm-datasets summary { cursor:pointer; }
+#zsm-datasets summary h2 { display:inline; margin:0; }
 .zsm-tabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 18px; border-bottom:2px solid var(--border-color, #606060); }
 .zsm-tabs button { margin:0; padding:9px 16px; }
 .zsm-tabs button.zsm-tab-active { background:#ff8c00 !important; border-color:#ff8c00 !important; color:#fff !important; }
@@ -319,7 +321,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 </section>
 
 <section class="zsm-panel" data-zsm-panel="overview">
-  <h2>Datasets</h2>
+  <details id="zsm-datasets">
+  <summary><h2>Datasets (<?=count($datasets)?>)</h2></summary>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
       <thead><tr><th data-sort="text">Name</th><th data-sort="text">Typ</th><th data-sort="number">Snapshots</th><th data-sort="number">Letzter Snapshot</th><th data-sort="number">Belegt</th><th data-sort="number">Verfügbar</th><th data-sort="number">Referenziert</th><th data-sort="text">Mountpoint</th></tr></thead>
@@ -346,6 +349,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
       </tbody>
     </table>
   </div>
+  </details>
 </section>
 
 <section class="zsm-panel" data-zsm-panel="overview">
@@ -427,6 +431,20 @@ $(function () {
     storedTab = 'overview';
   }
   showTab(storedTab);
+
+  var datasetsOpen = false;
+  try {
+    datasetsOpen = window.sessionStorage.getItem('zsm-datasets-open') === '1';
+  } catch (error) {
+    datasetsOpen = false;
+  }
+  $('#zsm-datasets').prop('open', datasetsOpen).on('toggle', function () {
+    try {
+      window.sessionStorage.setItem('zsm-datasets-open', this.open ? '1' : '0');
+    } catch (error) {
+      // Ohne Speicher bleibt der Bereich nach dem Neuladen eingeklappt.
+    }
+  });
 
   function sortValue(row, index, type) {
     var cell = row.children().eq(index);

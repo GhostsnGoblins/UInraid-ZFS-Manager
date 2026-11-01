@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4
+
+- Datasets-Bereich ein- und ausklappbar machen, standardmäßig eingeklappt
+
 ## 0.7.3
 
 - eigenen Bereich für verwaiste VM-Snapshots entfernen, die Kennzeichnung `verwaist` in der Snapshot-Tabelle genügt

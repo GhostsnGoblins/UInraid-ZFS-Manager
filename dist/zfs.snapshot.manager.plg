@@ -2,14 +2,14 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "zfs.snapshot.manager">
 <!ENTITY author "Claudio">
-<!ENTITY version "0.7.3">
+<!ENTITY version "0.7.4">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg">
-<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.7.3-noarch-1.txz">
-<!ENTITY packageSHA256 "0d84c277987253c7af273c58f537c6d882e215614ce6ccf5d852db5d71f6e0f9">
+<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.7.4-noarch-1.txz">
+<!ENTITY packageSHA256 "d93da107558d1455585130c668c118f4d91f180284e3c26669a0eb6f595c58e9">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### 0.7.3
+### 0.7.4
 
 - Suggests snapshot-<dataset> as the default snapshot share name
 - Adds one private, read-only SMB snapshot share per dataset with explicit users
@@ -31,7 +31,7 @@
 - Restores Unraid cron entries after installation and array start
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.7.3-noarch-1.txz">
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.7.4-noarch-1.txz">
 <URL>&packageURL;</URL>
 <SHA256>&packageSHA256;</SHA256>
 </FILE>
@@ -40,8 +40,8 @@
 <INLINE><![CDATA[
 set -euo pipefail
 
-PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.7.3-noarch-1.txz"
-EXPECTED_SHA256="0d84c277987253c7af273c58f537c6d882e215614ce6ccf5d852db5d71f6e0f9"
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.7.4-noarch-1.txz"
+EXPECTED_SHA256="d93da107558d1455585130c668c118f4d91f180284e3c26669a0eb6f595c58e9"
 
 if [[ ! -f "$PACKAGE" ]]; then
   echo "Missing local test package: $PACKAGE"
@@ -55,7 +55,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 /sbin/upgradepkg --install-new --reinstall "$PACKAGE"
-find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.7.3-noarch-1.txz' -delete
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.7.4-noarch-1.txz' -delete
 
 CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -86,7 +86,7 @@ if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-s
   echo "Warning: Snapshot shares could not be refreshed. They will be retried after the array starts."
 fi
 
-echo "ZFS Snapshot Manager 0.7.3 installed."
+echo "ZFS Snapshot Manager 0.7.4 installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>
@@ -95,7 +95,7 @@ echo "Manage snapshots from the top-level Snapshots tab."
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager remove-samba-config || echo "Warning: Snapshot shares could not be removed from Samba."
-removepkg zfs.snapshot.manager-0.7.3-noarch-1 2>/dev/null || true
+removepkg zfs.snapshot.manager-0.7.4-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log

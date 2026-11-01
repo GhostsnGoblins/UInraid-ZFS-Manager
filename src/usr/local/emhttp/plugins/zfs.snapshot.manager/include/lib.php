@@ -12,7 +12,7 @@ const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
 const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
-const ZSM_VERSION = '0.7.3';
+const ZSM_VERSION = '0.7.4';
 
 function zsm_is_enabled(): bool
 {
