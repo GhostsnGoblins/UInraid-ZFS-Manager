@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.7.0',
+    [string]$Version = '0.7.1',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,7 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Suggests snapshot-<dataset> as the default snapshot share name
 - Adds one private, read-only SMB snapshot share per dataset with explicit users
 - Shows every snapshot of the dataset automatically and leaves normal Unraid shares unchanged
 - Prevents scheduled snapshots from failing when the 15-minute cleanup starts at the same time

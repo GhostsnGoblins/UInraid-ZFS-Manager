@@ -11,7 +11,7 @@ const ZSM_SHARES_FILE = '/boot/config/plugins/zfs.snapshot.manager/shares.json';
 const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-snapshots.conf.new';
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
-const ZSM_VERSION = '0.7.0';
+const ZSM_VERSION = '0.7.1';
 
 function zsm_is_enabled(): bool
 {

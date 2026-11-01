@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.7.0
+## Funktionsumfang 0.7.1
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -34,7 +34,7 @@ Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie 
 
 ## Snapshot-Freigaben
 
-Pro Dataset lässt sich eine SMB-Freigabe einrichten, zum Beispiel `\\Tower\data-snapshots` für `disk1/data`. Jeder Snapshot erscheint dort automatisch als Ordner, auch manuelle und fremde. Neue Snapshots sind sofort sichtbar, gelöschte verschwinden sofort.
+Pro Dataset lässt sich eine SMB-Freigabe einrichten, zum Beispiel `\\Tower\snapshot-data` für `disk1/data`. Jeder Snapshot erscheint dort automatisch als Ordner, auch manuelle und fremde. Neue Snapshots sind sofort sichtbar, gelöschte verschwinden sofort.
 
 - Die Freigabe ist immer privat und schreibgeschützt.
 - Mindestens ein Unraid-Benutzer mit Passwort muss ausgewählt werden. `root` und Konten ohne Passwort sind ausgeschlossen.
@@ -64,7 +64,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.7.0-noarch-1.txz`
+- `zfs.snapshot.manager-0.7.1-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren

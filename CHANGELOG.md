@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- neue Snapshot-Freigaben standardmäßig als `snapshot-<dataset>` vorschlagen
+
 ## 0.7.0
 
 - pro Dataset eine private, schreibgeschützte SMB-Freigabe auf `.zfs/snapshot` einrichten

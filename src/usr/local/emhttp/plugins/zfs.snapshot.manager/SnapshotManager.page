@@ -528,7 +528,7 @@ $(function () {
       return;
     }
     var dataset = String($('#zsm-share-dataset option:selected').attr('data-name') || '');
-    $('#zsm-share-name').val(dataset.split('/').pop().replace(/[^A-Za-z0-9_-]/g, '-') + '-snapshots');
+    $('#zsm-share-name').val('snapshot-' + dataset.split('/').pop().replace(/[^A-Za-z0-9_-]/g, '-'));
   }
 
   function resetShareForm() {
