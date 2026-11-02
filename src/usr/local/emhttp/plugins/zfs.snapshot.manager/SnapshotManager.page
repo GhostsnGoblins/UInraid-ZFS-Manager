@@ -41,6 +41,10 @@ $serverName = (string) ($var['NAME'] ?? 'Tower');
 $vmOrphans = array_column(zsm_find_vm_orphans($snapshots, $filesystems), null, 'snapshot');
 $snapshotStats = zsm_snapshot_stats($snapshots);
 $healthyPoolCount = count(array_filter($pools, static fn(array $pool): bool => $pool['health'] === 'ONLINE'));
+$autoScrubGuids = zsm_load_auto_scrub_guids();
+$anyPoolScanActive = count(array_filter($pools, static fn(array $pool): bool =>
+    in_array($pool['scan_type'], ['scrub', 'resilver'], true)
+    && in_array($pool['scan_state'], ['in_progress', 'paused'], true))) > 0;
 
 $errors = [];
 if ($datasetResult['exitCode'] !== 0) {
@@ -96,6 +100,9 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-policy-actions button { margin:0; padding:7px 10px; white-space:nowrap; }
 .zsm-policy-actions .zsm-danger { background:#b71c1c !important; border-color:#b71c1c !important; color:#fff !important; }
 .zsm-policy-checkbox input { width:auto; margin-right:6px; }
+.zsm-scrub-auto { display:flex; align-items:flex-start; gap:7px; }
+.zsm-scrub-auto input { margin:2px 0 0; }
+.zsm-scrub-auto span { display:block; }
 .zsm-policy-scope { grid-column:1/-1; padding:9px 11px; border-left:3px solid #ff8c00; background:rgba(255,140,0,.08); }
 .zsm-share-users { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px 16px; }
 .zsm-share-users label { flex-direction:row; align-items:center; gap:6px; }
@@ -174,13 +181,13 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <section class="zsm-panel" data-zsm-panel="pools">
   <h2>Pools &amp; Scrub</h2>
-  <p>Diese Ansicht liest den aktuellen ZFS-Status aus. Sie startet, pausiert oder beendet keine Scrubs. Ein Scrub prüft die Datenintegrität, ersetzt aber weder Snapshots noch Backups.</p>
+  <p>Ein Scrub prüft die Datenintegrität, ersetzt aber weder Snapshots noch Backups. Ohne Redundanz kann ZFS beschädigte Daten nur erkennen, nicht selbst reparieren. Monatliche Auto-Scrubs werden täglich um 03:00 Uhr auf Fälligkeit geprüft und frühestens 30 Tage nach dem letzten abgeschlossenen Scrub gestartet. Um die I/O-Last zu begrenzen, läuft höchstens ein Scrub oder Resilver gleichzeitig.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th data-sort="text">Pool</th><th data-sort="text">Zustand</th><th data-sort="text">Scrub</th><th data-sort="number">Zeitpunkt</th><th data-sort="text">Ergebnis</th><th data-sort="number">Fortschritt</th></tr></thead>
+      <thead><tr><th data-sort="text">Pool</th><th data-sort="text">Zustand</th><th data-sort="text">Scrub</th><th data-sort="number">Zeitpunkt</th><th data-sort="text">Ergebnis</th><th data-sort="number">Fortschritt</th><th>Auto-Scrub</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$pools): ?>
-        <tr><td colspan="6"><?=$arrayStarted ? 'Keine importierten ZFS-Pools gefunden.' : 'Das Array ist noch nicht gestartet.'?></td></tr>
+        <tr><td colspan="8"><?=$arrayStarted ? 'Keine importierten ZFS-Pools gefunden.' : 'Das Array ist noch nicht gestartet.'?></td></tr>
       <?php else: ?>
         <?php foreach ($pools as $pool): ?>
           <?php
@@ -188,6 +195,10 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
           $healthClass = $pool['health'] === 'ONLINE' ? 'zsm-state-good' : ($pool['health'] === 'DEGRADED' ? 'zsm-state-warn' : 'zsm-state-bad');
           $scanWarning = in_array($pool['scan_state'], ['never', 'canceled', 'unknown', 'unavailable'], true)
               || ($pool['scan_type'] === 'scrub' && ctype_digit($pool['errors']) && (int) $pool['errors'] > 0);
+          $autoScrubEnabled = in_array($pool['guid'], $autoScrubGuids, true);
+          $scrubRunning = $pool['scan_type'] === 'scrub' && in_array($pool['scan_state'], ['in_progress', 'paused'], true);
+          $canStartScrub = !$anyPoolScanActive && in_array($pool['health'], ['ONLINE', 'DEGRADED'], true);
+          $nextScrubCheck = zsm_next_scrub_check($pool);
           ?>
           <tr>
             <td><?=zsm_h($pool['name'])?><br><span class="zsm-muted">GUID <?=zsm_h($pool['guid'])?></span></td>
@@ -196,6 +207,17 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
             <td data-sort-value="<?=$scanTimestamp?>"><?=zsm_h($scanTimestamp > 0 ? zsm_format_timestamp((string) $scanTimestamp) : '-')?></td>
             <td class="<?=$pool['errors'] !== '0' ? 'zsm-state-warn' : ''?>"><?=zsm_h(zsm_pool_scan_result($pool))?></td>
             <td data-sort-value="<?=zsm_h($pool['progress'])?>"><?=zsm_h(zsm_pool_scan_progress($pool))?></td>
+            <td><label class="zsm-scrub-auto">
+              <input type="checkbox" class="zsm-auto-scrub" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>"<?=$autoScrubEnabled ? ' checked' : ''?>>
+              <span>Monatlich<?php if ($autoScrubEnabled): ?><br><small class="zsm-muted">Nächste Prüfung: <?=zsm_h($nextScrubCheck->format('d.m.Y H:i'))?> Uhr</small><?php endif; ?></span>
+            </label></td>
+            <td><div class="zsm-policy-actions">
+              <?php if ($scrubRunning): ?>
+                <button type="button" class="zsm-scrub-stop zsm-danger" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>">Scrub abbrechen</button>
+              <?php else: ?>
+                <button type="button" class="zsm-scrub-start" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>" data-health="<?=zsm_h($pool['health'])?>"<?=$canStartScrub ? '' : ' disabled'?> title="<?=$canStartScrub ? 'Scrub für diesen Pool starten' : 'Während eines laufenden Scans oder bei diesem Pool-Zustand nicht verfügbar'?>">Scrub starten</button>
+              <?php endif; ?>
+            </div></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -537,6 +559,62 @@ $(function () {
       .show();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  function scrubRequest(data, button, waitingLabel, fallbackMessage) {
+    var originalLabel = button.is(':checkbox') ? '' : button.text();
+    button.prop('disabled', true);
+    if (!button.is(':checkbox')) {
+      button.text(waitingLabel);
+    }
+    data.csrf_token = <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/scrubs.php',
+      method: 'POST',
+      dataType: 'json',
+      data: data
+    }).done(function (response) {
+      showMessage(response.message, false);
+      window.setTimeout(function () { window.location.reload(); }, 700);
+    }).fail(function (xhr) {
+      showMessage((xhr.responseJSON || {}).message || fallbackMessage, true);
+      button.prop('disabled', false);
+      if (button.is(':checkbox')) {
+        button.prop('checked', !button.prop('checked'));
+      } else {
+        button.text(originalLabel);
+      }
+    });
+  }
+
+  $('.zsm-auto-scrub').on('change', function () {
+    var checkbox = $(this);
+    scrubRequest({
+      action: 'toggle',
+      guid: String(checkbox.data('guid') || ''),
+      enabled: checkbox.prop('checked') ? '1' : '0'
+    }, checkbox, '', 'Die Auto-Scrub-Einstellung konnte nicht gespeichert werden.');
+  });
+
+  $('.zsm-scrub-start').on('click', function () {
+    var button = $(this);
+    var pool = String(button.data('pool') || '');
+    var health = String(button.data('health') || '');
+    var warning = 'Scrub für ' + pool + ' jetzt starten?\n\nDer Vorgang erzeugt eine hohe I/O-Last und kann längere Zeit dauern.';
+    if (health === 'DEGRADED') {
+      warning += '\n\nDer Pool ist DEGRADED. Prüfe den Zustand besonders sorgfältig.';
+    }
+    if (window.confirm(warning)) {
+      scrubRequest({ action: 'start', guid: String(button.data('guid') || '') }, button, 'Wird gestartet...', 'Der Scrub konnte nicht gestartet werden.');
+    }
+  });
+
+  $('.zsm-scrub-stop').on('click', function () {
+    var button = $(this);
+    var pool = String(button.data('pool') || '');
+    if (window.confirm('Laufenden Scrub für ' + pool + ' wirklich abbrechen?')) {
+      scrubRequest({ action: 'stop', guid: String(button.data('guid') || '') }, button, 'Wird abgebrochen...', 'Der Scrub konnte nicht abgebrochen werden.');
+    }
+  });
 
   function updatePolicyFields() {
     var frequency = $('#zsm-policy-frequency').val();

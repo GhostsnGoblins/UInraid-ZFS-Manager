@@ -7,13 +7,15 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.8.0-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.9.0-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
 $settingsEndpointPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\settings.php'
 $policiesEndpointPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\policies.php'
 $policyRunnerPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\policy-runner.php'
+$scrubEndpointPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\scrubs.php'
+$scrubRunnerPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\scrub-runner.php'
 $eventStartedPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\event\started'
 
 [xml]$manifest = Get-Content -Raw -LiteralPath $manifestPath
@@ -29,8 +31,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.8.0';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.8.0.'
+if ($library -notmatch "const ZSM_VERSION = '0.9.0';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.9.0.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -43,6 +45,9 @@ if ($library -notmatch 'function zsm_policy_scopes_overlap' -or $library -notmat
 }
 if ($library -notmatch "zsm_run\(\['refresh-cron'\]") {
     throw 'Cron-Aktualisierung wird nicht über das installierte Backend ausgeführt.'
+}
+if ($library -notmatch 'function zsm_load_auto_scrub_guids' -or $library -notmatch 'ZSM_SCRUB_RUNNER' -or $library -notmatch "'0 3 \* \* \* /usr/bin/php %s") {
+    throw 'Persistente Auto-Scrub-Konfiguration oder täglicher Cron-Lauf fehlt.'
 }
 
 $backend = Get-Content -Raw -LiteralPath $backendPath
@@ -80,8 +85,14 @@ if ($backend -notmatch 'lock_snapshot_action 60' -or $backend -notmatch 'flock -
 if ($backend -notmatch 'uzm_auto_\$\{policy_id\}' -or $backend -notmatch 'mode=retention') {
     throw 'Automatische Snapshots sind nicht eindeutig an ihre Regel gebunden.'
 }
-if ($backend -notmatch 'list-pools' -or $backend -notmatch 'status -p "\$name"' -or $backend -match '"\$zpool_bin"\s+scrub') {
-    throw 'Pool-Status fehlt oder die reine Statusversion enthält eine schreibende Scrub-Aktion.'
+if ($backend -notmatch 'list-pools' -or $backend -notmatch 'status -p "\$name"') {
+    throw 'Pool- und Scrub-Status fehlen.'
+}
+if ($backend -notmatch '"\$zpool_bin" scrub "\$name"' -or $backend -notmatch '"\$zpool_bin" scrub -s "\$name"' -or $backend -notmatch 'is_valid_pool_guid') {
+    throw 'Manueller Scrub-Start, Abbruch oder GUID-Prüfung fehlt.'
+}
+if ($backend -notmatch 'any_pool_scan_active' -or $backend -notmatch 'SCRUB_LOCK_FILE') {
+    throw 'Scrub-Aktionen verhindern keine parallelen Scans oder konkurrierenden Starts.'
 }
 if ($backend -notmatch 'snapshot_arguments\+=\(-r\)' -or $backend -notmatch 'mapfile -t candidates') {
     throw 'Rekursive Erstellung oder vollständige Löschvorprüfung fehlt.'
@@ -136,6 +147,9 @@ if ($page -notmatch 'data-zsm-panel="policies"' -or $page -notmatch 'data-zsm-pa
 if ($page -notmatch 'data-zsm-panel="pools"' -or $page -notmatch "zsm_run\(\['list-pools'\]\)" -or $page -notmatch 'Pools &amp; Scrub') {
     throw 'Pool- und Scrub-Status liegen nicht im vorgesehenen eigenen Tab.'
 }
+if ($page -notmatch 'zsm-auto-scrub' -or $page -notmatch 'zsm-scrub-start' -or $page -notmatch 'zsm-scrub-stop') {
+    throw 'Pool-Tabelle enthält keine Auto-Scrub-Checkbox oder manuellen Scrub-Aktionen.'
+}
 if ($page -notmatch '<details id="zsm-datasets">') {
     throw 'Datasets sind nicht einklappbar oder nicht standardmäßig eingeklappt.'
 }
@@ -177,7 +191,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.8.0-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.9.0-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
@@ -187,6 +201,9 @@ if ($manifestText -notmatch '<!ENTITY pluginURL "https://raw\.githubusercontent\
     $manifestText -notmatch '<URL>&packageURL;</URL>' -or
     $manifestText -notmatch '<SHA256>&packageSHA256;</SHA256>') {
     throw 'Manifest deklariert die Update-Metadaten nicht als kanonische PLG-Entities.'
+}
+if ($manifestText -notmatch 'scrubs\.json' -or $manifestText -notmatch 'chmod 755 /usr/local/emhttp/plugins/zfs\.snapshot\.manager/scripts/scrub-runner\.php') {
+    throw 'Manifest initialisiert die Scrub-Konfiguration oder den Runner nicht korrekt.'
 }
 if ($topPage -notmatch 'zfs\.snapshot\.manager\.cfg') {
     throw 'Der Hauptreiter berücksichtigt die Aktivierungseinstellung nicht.'
@@ -217,6 +234,20 @@ if ($policiesEndpoint -match 'shell_exec|exec\s*\(|system\s*\(|passthru\s*\(') {
 $policyRunner = Get-Content -Raw -LiteralPath $policyRunnerPath
 if ($policyRunner -notmatch "'cleanup-policy'" -or $policyRunner -notmatch 'zsm_find_policy') {
     throw 'Cron-Runner löst Regeln nicht anhand ihrer stabilen ID auf.'
+}
+$scrubEndpoint = Get-Content -Raw -LiteralPath $scrubEndpointPath
+if ($scrubEndpoint -match 'shell_exec|exec\s*\(|system\s*\(|passthru\s*\(' -or
+    $scrubEndpoint -notmatch "\['start-scrub', \`$guid, 'manual'\]" -or
+    $scrubEndpoint -notmatch "\['stop-scrub', \`$guid\]") {
+    throw 'Scrub-Endpunkt verwendet keine fest definierten Backend-Aktionen.'
+}
+if ($scrubEndpoint -notmatch 'zsm_save_auto_scrub_guids' -or $scrubEndpoint -notmatch 'zsm_apply_cron') {
+    throw 'Scrub-Endpunkt speichert die GUID-Auswahl oder aktualisiert Cron nicht.'
+}
+$scrubRunner = Get-Content -Raw -LiteralPath $scrubRunnerPath
+if ($scrubRunner -notmatch "\['start-scrub', \`$due\[0\]\['guid'\], 'automatic'\]" -or
+    $scrubRunner -notmatch 'zsm_scrub_is_due' -or $scrubRunner -notmatch "\['in_progress', 'paused'\]") {
+    throw 'Auto-Scrub-Runner prüft Fälligkeit oder laufende Scans nicht vollständig.'
 }
 $eventStarted = Get-Content -Raw -LiteralPath $eventStartedPath
 if ($eventStarted -notmatch 'apply-cron\.php') {

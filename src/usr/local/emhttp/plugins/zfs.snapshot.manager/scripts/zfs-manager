@@ -7,6 +7,7 @@ readonly PLUGIN_NAME="zfs.snapshot.manager"
 readonly LOG_FILE="${ZSM_LOG_FILE:-/var/log/${PLUGIN_NAME}.log}"
 readonly LOCK_FILE="${ZSM_LOCK_FILE:-/var/run/${PLUGIN_NAME}.lock}"
 readonly CRON_LOCK_FILE="${ZSM_CRON_LOCK_FILE:-/var/run/${PLUGIN_NAME}.cron.lock}"
+readonly SCRUB_LOCK_FILE="${ZSM_SCRUB_LOCK_FILE:-/var/run/${PLUGIN_NAME}.scrub.lock}"
 readonly UPDATE_CRON_BIN="${ZSM_UPDATE_CRON_BIN:-/usr/local/sbin/update_cron}"
 readonly SNAPSHOT_KIND_PROPERTY="org.unraidzfsmanager:kind"
 readonly SNAPSHOT_POLICY_PROPERTY="org.unraidzfsmanager:policy"
@@ -63,6 +64,10 @@ is_valid_retention_seconds() {
 
 is_valid_recursive() {
   [[ "$1" == "0" || "$1" == "1" ]]
+}
+
+is_valid_pool_guid() {
+  [[ "$1" =~ ^[0-9]{1,20}$ ]]
 }
 
 is_plugin_snapshot() {
@@ -190,6 +195,96 @@ list_pools() {
       "$guid" "$name" "$health" "$scan_type" "$scan_state" "$started" "$completed" \
       "$repaired" "$errors" "$progress" "$eta" "$summary"
   done <<< "$rows"
+}
+
+pool_record_from_guid() {
+  local zpool_bin="$1"
+  local requested_guid="$2"
+  local guid name health
+  is_valid_pool_guid "$requested_guid" || fail "Ungültige Pool-GUID." 64
+  while IFS=$'\t' read -r guid name health; do
+    if [[ "$guid" == "$requested_guid" ]]; then
+      printf '%s\t%s\n' "$name" "$health"
+      return 0
+    fi
+  done < <("$zpool_bin" list -H -p -o guid,name,health)
+  fail "Der ausgewählte ZFS-Pool wurde nicht gefunden." 66
+}
+
+pool_scan_active() {
+  local zpool_bin="$1"
+  local name="$2"
+  local status scan_line
+  status="$("$zpool_bin" status -p "$name" 2>/dev/null)" || return 1
+  scan_line="$(awk '/^[[:space:]]*scan:/ { sub(/^[[:space:]]*scan:[[:space:]]*/, ""); print; exit }' <<< "$status")"
+  [[ "$scan_line" == *"scrub in progress"* \
+    || "$scan_line" == *"scrub paused"* \
+    || "$scan_line" == *"resilver in progress"* ]]
+}
+
+any_pool_scan_active() {
+  local zpool_bin="$1"
+  local name
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    pool_scan_active "$zpool_bin" "$name" && return 0
+  done < <("$zpool_bin" list -H -o name)
+  return 1
+}
+
+start_scrub() {
+  local zpool_bin="$1"
+  local guid="$2"
+  local mode="$3"
+  local record name health
+  [[ "$mode" == "manual" || "$mode" == "automatic" ]] || fail "Ungültiger Scrub-Modus." 64
+  is_valid_pool_guid "$guid" || fail "Ungültige Pool-GUID." 64
+  exec 6>"$SCRUB_LOCK_FILE"
+  flock -n 6 || fail "Eine andere Scrub-Aktion läuft bereits." 75
+  record="$(pool_record_from_guid "$zpool_bin" "$guid")" || exit $?
+  IFS=$'\t' read -r name health <<< "$record"
+
+  if [[ "$mode" == "automatic" && "$health" != "ONLINE" ]]; then
+    write_log "action=scrub-start mode=automatic guid=${guid} pool=${name} result=skipped reason=health_${health}"
+    fail "Der automatische Scrub wurde wegen des Pool-Zustands ${health} nicht gestartet." 69
+  fi
+  if [[ "$mode" == "manual" && "$health" != "ONLINE" && "$health" != "DEGRADED" ]]; then
+    write_log "action=scrub-start mode=manual guid=${guid} pool=${name} result=blocked reason=health_${health}"
+    fail "Ein Scrub kann im Pool-Zustand ${health} nicht sicher gestartet werden." 69
+  fi
+  if any_pool_scan_active "$zpool_bin"; then
+    write_log "action=scrub-start mode=${mode} guid=${guid} pool=${name} result=blocked reason=scan_active"
+    fail "Es läuft bereits ein Scrub oder Resilver. Der neue Scrub wurde nicht gestartet." 75
+  fi
+  if ! "$zpool_bin" scrub "$name"; then
+    write_log "action=scrub-start mode=${mode} guid=${guid} pool=${name} result=failed"
+    fail "ZFS konnte den Scrub nicht starten." 74
+  fi
+  write_log "action=scrub-start mode=${mode} guid=${guid} pool=${name} result=success"
+  printf '%s\n' "$name"
+}
+
+stop_scrub() {
+  local zpool_bin="$1"
+  local guid="$2"
+  local record name health status scan_line
+  is_valid_pool_guid "$guid" || fail "Ungültige Pool-GUID." 64
+  exec 6>"$SCRUB_LOCK_FILE"
+  flock -n 6 || fail "Eine andere Scrub-Aktion läuft bereits." 75
+  record="$(pool_record_from_guid "$zpool_bin" "$guid")" || exit $?
+  IFS=$'\t' read -r name health <<< "$record"
+  status="$("$zpool_bin" status -p "$name" 2>/dev/null)" \
+    || fail "Der Scrub-Status konnte nicht gelesen werden." 74
+  scan_line="$(awk '/^[[:space:]]*scan:/ { sub(/^[[:space:]]*scan:[[:space:]]*/, ""); print; exit }' <<< "$status")"
+  if [[ "$scan_line" != *"scrub in progress"* && "$scan_line" != *"scrub paused"* ]]; then
+    fail "Für diesen Pool läuft kein abbrechbarer Scrub." 69
+  fi
+  if ! "$zpool_bin" scrub -s "$name"; then
+    write_log "action=scrub-stop guid=${guid} pool=${name} result=failed"
+    fail "ZFS konnte den Scrub nicht abbrechen." 74
+  fi
+  write_log "action=scrub-stop guid=${guid} pool=${name} result=success"
+  printf '%s\n' "$name"
 }
 
 plugin_snapshot_metadata_matches() {
@@ -655,6 +750,16 @@ main() {
   if [[ "$command" == "list-pools" ]]; then
     [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-pools" 64
     list_pools "$(find_zpool)"
+    return 0
+  fi
+  if [[ "$command" == "start-scrub" ]]; then
+    [[ $# -eq 3 ]] || fail "Aufruf: zfs-manager start-scrub POOL_GUID MODUS" 64
+    start_scrub "$(find_zpool)" "$2" "$3"
+    return 0
+  fi
+  if [[ "$command" == "stop-scrub" ]]; then
+    [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager stop-scrub POOL_GUID" 64
+    stop_scrub "$(find_zpool)" "$2"
     return 0
   fi
 

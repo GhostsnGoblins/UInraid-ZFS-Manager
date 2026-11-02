@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.8.0',
+    [string]$Version = '0.9.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,10 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds manual scrub start and stop actions per pool
+- Adds one monthly auto-scrub checkbox per stable pool GUID
+- Checks due pools daily at 03:00 and starts at most one scrub at a time
+- Skips automatic scrubs while another scrub or resilver is active
 - Adds a read-only Pools & Scrub tab with pool health and scrub status
 - Shows completed, running, paused, canceled, missing, and superseded scrub information
 - Displays scrub timestamps, repaired bytes, errors, progress, and estimated remaining time
@@ -145,11 +149,18 @@ if [[ ! -f "`$POLICIES_FILE" ]]; then
 fi
 chmod 600 "`$POLICIES_FILE"
 
+SCRUBS_FILE="/boot/config/plugins/zfs.snapshot.manager/scrubs.json"
+if [[ ! -f "`$SCRUBS_FILE" ]]; then
+  printf '[]\n' > "`$SCRUBS_FILE"
+fi
+chmod 600 "`$SCRUBS_FILE"
+
 chown -R root:root /usr/local/emhttp/plugins/zfs.snapshot.manager
 find /usr/local/emhttp/plugins/zfs.snapshot.manager -type d -exec chmod 755 {} \;
 find /usr/local/emhttp/plugins/zfs.snapshot.manager -type f -exec chmod 644 {} \;
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php
+chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/scrub-runner.php
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-shares.php
 chmod 755 /usr/local/emhttp/plugins/zfs.snapshot.manager/event/started
@@ -180,6 +191,8 @@ rm -f /var/run/zfs.snapshot.manager.cron.lock
 rm -f /var/run/zfs.snapshot.manager.policies.lock
 rm -f /var/run/zfs.snapshot.manager.shares.lock
 rm -f /var/run/zfs.snapshot.manager.samba.lock
+rm -f /var/run/zfs.snapshot.manager.scrub.lock
+rm -f /var/run/zfs.snapshot.manager.scrubs.lock
 if [[ -x /usr/local/sbin/update_cron ]]; then
   /usr/local/sbin/update_cron || true
 fi
@@ -205,10 +218,12 @@ $requiredEntries = @(
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/action.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/lib.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/policies.php',
+    './usr/local/emhttp/plugins/zfs.snapshot.manager/include/scrubs.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/shares.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/include/settings.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/policy-runner.php',
+    './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/scrub-runner.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-cron.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-shares.php',
     './usr/local/emhttp/plugins/zfs.snapshot.manager/event/started',

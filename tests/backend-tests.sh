@@ -11,6 +11,7 @@ mkdir -p "$test_root/bin"
 mock_log="$test_root/zfs-arguments.log"
 cron_log="$test_root/update-cron.log"
 flock_log="$test_root/flock.log"
+zpool_log="$test_root/zpool-arguments.log"
 policy_id="0123456789abcdef0123456789abcdef"
 
 cat > "$test_root/bin/zfs" <<'MOCK'
@@ -123,8 +124,17 @@ chmod 755 "$test_root/bin/zfs"
 cat > "$test_root/bin/zpool" <<'MOCK'
 #!/bin/bash
 set -u
+printf '%s\n' "$*" >> "$MOCK_ZPOOL_LOG"
+
+if [[ "${1:-}" == "scrub" ]]; then
+  exit 0
+fi
 
 if [[ "${1:-}" == "list" ]]; then
+  if [[ "$*" == *"-o name"* ]]; then
+    printf 'tank\nbackup\narchive\nmedia\n'
+    exit 0
+  fi
   printf '111\ttank\tONLINE\n'
   printf '222\tbackup\tDEGRADED\n'
   printf '333\tarchive\tONLINE\n'
@@ -143,7 +153,8 @@ config:
 STATUS
       ;;
     backup)
-      cat <<'STATUS'
+      if [[ "${MOCK_ACTIVE_SCAN:-1}" == "1" ]]; then
+        cat <<'STATUS'
   pool: backup
  state: DEGRADED
   scan: scrub in progress since Mon Nov  2 04:00:00 2026
@@ -151,6 +162,14 @@ STATUS
         0B repaired, 5.00% done, 00:03:00 to go
 config:
 STATUS
+      else
+        cat <<'STATUS'
+  pool: backup
+ state: DEGRADED
+  scan: scrub repaired 0B in 00:05:12 with 0 errors on Sun Nov  1 03:00:00 2026
+config:
+STATUS
+      fi
       ;;
     archive)
       cat <<'STATUS'
@@ -196,9 +215,12 @@ export MOCK_ZFS_LOG="$mock_log"
 export ZSM_LOG_FILE="$test_root/plugin.log"
 export ZSM_LOCK_FILE="$test_root/plugin.lock"
 export ZSM_CRON_LOCK_FILE="$test_root/plugin-cron.lock"
+export ZSM_SCRUB_LOCK_FILE="$test_root/plugin-scrub.lock"
 export ZSM_UPDATE_CRON_BIN="$test_root/bin/update_cron"
 export MOCK_CRON_LOG="$cron_log"
 export MOCK_FLOCK_LOG="$flock_log"
+export MOCK_ZPOOL_LOG="$zpool_log"
+export MOCK_ACTIVE_SCAN=1
 
 "$backend" refresh-cron
 [[ "$(cat "$cron_log")" == 'called' ]]
@@ -218,6 +240,42 @@ pool_output="$("$backend" list-pools)"
 [[ "$pool_output" == *$'222\tbackup\tDEGRADED\tscrub\tin_progress\t'*$'\t0\t0B\t0\t5.00\t00:03:00\tscrub in progress'* ]]
 [[ "$pool_output" == *$'333\tarchive\tONLINE\tnone\tnever\t0\t0\t0\t0\t\t\tnone requested'* ]]
 [[ "$pool_output" == *$'444\tmedia\tONLINE\tresilver\tcompleted\t0\t0\t0\t0\t\t\tresilvered'* ]]
+
+before_invalid_scrub="$(wc -l < "$zpool_log")"
+set +e
+invalid_scrub_output="$("$backend" start-scrub '333;bad' manual 2>&1)"
+invalid_scrub_status=$?
+set -e
+[[ $invalid_scrub_status -eq 64 ]]
+[[ "$invalid_scrub_output" == *"Ungültige Pool-GUID"* ]]
+[[ "$before_invalid_scrub" == "$(wc -l < "$zpool_log")" ]]
+
+set +e
+blocked_scrub_output="$("$backend" start-scrub 333 automatic 2>&1)"
+blocked_scrub_status=$?
+set -e
+[[ $blocked_scrub_status -eq 75 ]]
+[[ "$blocked_scrub_output" == *"Scrub-Aktion"* || "$blocked_scrub_output" == *"Scrub oder Resilver"* ]]
+! grep -Fxq 'scrub archive' "$zpool_log"
+
+export MOCK_ACTIVE_SCAN=0
+started_pool="$("$backend" start-scrub 333 manual)"
+[[ "$started_pool" == 'archive' ]]
+grep -Fxq 'scrub archive' "$zpool_log"
+grep -Fq 'action=scrub-start mode=manual guid=333 pool=archive result=success' "$test_root/plugin.log"
+
+set +e
+degraded_auto_output="$("$backend" start-scrub 222 automatic 2>&1)"
+degraded_auto_status=$?
+set -e
+[[ $degraded_auto_status -eq 69 ]]
+[[ "$degraded_auto_output" == *"DEGRADED"* ]]
+
+export MOCK_ACTIVE_SCAN=1
+stopped_pool="$("$backend" stop-scrub 222)"
+[[ "$stopped_pool" == 'backup' ]]
+grep -Fxq 'scrub -s backup' "$zpool_log"
+grep -Fq 'action=scrub-stop guid=222 pool=backup result=success' "$test_root/plugin.log"
 
 before_invalid="$(wc -l < "$mock_log")"
 set +e

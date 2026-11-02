@@ -152,4 +152,15 @@ check(zsm_pool_scan_progress($runningPool) === '5.00 %, etwa 00:03:00', 'Fortsch
 check(zsm_pool_scan_label(['scan_type' => 'none', 'scan_state' => 'never']) === 'Noch kein Scrub protokolliert', 'fehlender Scrub wird gemeldet');
 check(zsm_pool_scan_label(['scan_type' => 'resilver', 'scan_state' => 'completed']) === 'Letzter Scan war ein Resilver', 'Resilver wird nicht als Scrub ausgegeben');
 
+check(zsm_normalize_auto_scrub_guids(['22', '1', '22', 'x', 3]) === ['1', '22'], 'Auto-Scrub verwendet eindeutige gültige Pool-GUIDs');
+$scrubNow = 1793592000;
+$recentPool = array_merge($completedPool, ['scan_completed' => (string) ($scrubNow - 86400)]);
+$oldPool = array_merge($completedPool, ['scan_completed' => (string) ($scrubNow - ZSM_SCRUB_INTERVAL_SECONDS)]);
+check(!zsm_scrub_is_due($recentPool, $scrubNow), 'frischer Scrub ist noch nicht fällig');
+check(zsm_scrub_is_due($oldPool, $scrubNow), 'Scrub wird nach 30 Tagen fällig');
+check(zsm_scrub_is_due(['scan_type' => 'resilver', 'scan_state' => 'completed'], $scrubNow), 'Resilver ersetzt keinen fälligen Scrub');
+$fixedNow = new DateTimeImmutable('2026-11-02 04:00:00', new DateTimeZone('Europe/Berlin'));
+$neverPool = ['scan_type' => 'none', 'scan_state' => 'never', 'scan_completed' => '0'];
+check(zsm_next_scrub_check($neverPool, $fixedNow)->format('Y-m-d H:i') === '2026-11-03 03:00', 'nie gescrubbter Pool wird beim nächsten Wartungsfenster geprüft');
+
 echo 'PHP-Tests erfolgreich.' . PHP_EOL;

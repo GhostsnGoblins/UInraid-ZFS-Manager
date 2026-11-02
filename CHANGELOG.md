@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+- Scrubs pro ZFS-Pool manuell starten und laufende Scrubs abbrechen
+- monatlichen Auto-Scrub über eine Checkbox pro Pool aktivieren
+- Auto-Scrub-Konfiguration ausschließlich über stabile Pool-GUIDs speichern
+- täglich um 03:00 Uhr prüfen, ob der letzte abgeschlossene Scrub mindestens 30 Tage zurückliegt
+- höchstens einen automatischen Scrub starten und bei laufendem Scrub oder Resilver warten
+- automatische Scrubs bei nicht online befindlichen Pools überspringen und alle Aktionen protokollieren
+
 ## 0.8.0
 
 - neuen rein lesenden Tab `Pools & Scrub` ergänzen
