@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0
+## 0.9.1
 
 - Wochentag von Montag bis Sonntag und Uhrzeit pro monatlichem Auto-Scrub auswählbar machen
 - fällige Pool-Scrubs über einen zentralen minütlichen Dispatcher kontrolliert nacheinander starten
