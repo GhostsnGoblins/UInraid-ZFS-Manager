@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2
+
+- Auto-Scrub-Zeitangaben wie `03:00` mit führenden Nullen korrekt validieren
+- sofortiges Zurückspringen der Checkbox bei gültigem Wochentag und gültiger Uhrzeit beheben
+
 ## 0.9.1
 
 - Wochentag von Montag bis Sonntag und Uhrzeit pro monatlichem Auto-Scrub auswählbar machen

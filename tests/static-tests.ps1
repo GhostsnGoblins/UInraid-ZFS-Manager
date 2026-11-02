@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.9.1-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.9.2-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -31,8 +31,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.9.1';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.9.1.'
+if ($library -notmatch "const ZSM_VERSION = '0.9.2';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.9.2.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -197,7 +197,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.9.1-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.9.2-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
@@ -247,7 +247,8 @@ if ($scrubEndpoint -match 'shell_exec|exec\s*\(|system\s*\(|passthru\s*\(' -or
     $scrubEndpoint -notmatch "\['stop-scrub', \`$guid\]") {
     throw 'Scrub-Endpunkt verwendet keine fest definierten Backend-Aktionen.'
 }
-if ($scrubEndpoint -notmatch 'zsm_save_scrub_schedules' -or $scrubEndpoint -notmatch "'schedule'" -or $scrubEndpoint -notmatch 'zsm_apply_cron') {
+if ($scrubEndpoint -notmatch 'zsm_save_scrub_schedules' -or $scrubEndpoint -notmatch "'schedule'" -or
+    $scrubEndpoint -notmatch 'zsm_parse_bounded_integer' -or $scrubEndpoint -notmatch 'zsm_apply_cron') {
     throw 'Scrub-Endpunkt speichert Wochentag und Uhrzeit nicht oder aktualisiert Cron nicht.'
 }
 $scrubRunner = Get-Content -Raw -LiteralPath $scrubRunnerPath

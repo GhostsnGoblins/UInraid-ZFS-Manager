@@ -152,6 +152,10 @@ check(zsm_pool_scan_progress($runningPool) === '5.00 %, etwa 00:03:00', 'Fortsch
 check(zsm_pool_scan_label(['scan_type' => 'none', 'scan_state' => 'never']) === 'Noch kein Scrub protokolliert', 'fehlender Scrub wird gemeldet');
 check(zsm_pool_scan_label(['scan_type' => 'resilver', 'scan_state' => 'completed']) === 'Letzter Scan war ein Resilver', 'Resilver wird nicht als Scrub ausgegeben');
 
+check(zsm_parse_bounded_integer('03', 0, 23) === 3, 'Stunden mit führender Null werden akzeptiert');
+check(zsm_parse_bounded_integer('00', 0, 59) === 0, 'Minuten mit führender Null werden akzeptiert');
+check(zsm_parse_bounded_integer('60', 0, 59) === null, 'Zeitwerte außerhalb des Bereichs werden abgelehnt');
+check(zsm_parse_bounded_integer('3x', 0, 23) === null, 'nicht numerische Zeitwerte werden abgelehnt');
 $scrubSchedules = zsm_normalize_scrub_schedules([
     '22',
     ['guid' => '1', 'weekday' => 1, 'hour' => 4, 'minute' => 30],

@@ -14,7 +14,7 @@ const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
 const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
-const ZSM_VERSION = '0.9.1';
+const ZSM_VERSION = '0.9.2';
 const ZSM_SCRUB_INTERVAL_SECONDS = 2592000;
 
 function zsm_is_enabled(): bool
@@ -74,6 +74,18 @@ function zsm_is_valid_policy_id(string $id): bool
 function zsm_is_valid_pool_guid(string $guid): bool
 {
     return preg_match('/^[0-9]{1,20}$/D', $guid) === 1;
+}
+
+function zsm_parse_bounded_integer(mixed $value, int $minimum, int $maximum): ?int
+{
+    if (is_int($value)) {
+        $parsed = $value;
+    } elseif (is_string($value) && preg_match('/^[0-9]+$/D', $value) === 1) {
+        $parsed = (int) $value;
+    } else {
+        return null;
+    }
+    return $parsed >= $minimum && $parsed <= $maximum ? $parsed : null;
 }
 
 /** @return array<string,string> */
@@ -177,13 +189,11 @@ function zsm_normalize_scrub_schedule(mixed $candidate): ?array
     }
 
     $guid = $candidate['guid'] ?? '';
-    $weekday = filter_var($candidate['weekday'] ?? null, FILTER_VALIDATE_INT);
-    $hour = filter_var($candidate['hour'] ?? null, FILTER_VALIDATE_INT);
-    $minute = filter_var($candidate['minute'] ?? null, FILTER_VALIDATE_INT);
+    $weekday = zsm_parse_bounded_integer($candidate['weekday'] ?? null, 0, 6);
+    $hour = zsm_parse_bounded_integer($candidate['hour'] ?? null, 0, 23);
+    $minute = zsm_parse_bounded_integer($candidate['minute'] ?? null, 0, 59);
     if (!is_string($guid) || !zsm_is_valid_pool_guid($guid)
-        || $weekday === false || $weekday < 0 || $weekday > 6
-        || $hour === false || $hour < 0 || $hour > 23
-        || $minute === false || $minute < 0 || $minute > 59) {
+        || $weekday === null || $hour === null || $minute === null) {
         return null;
     }
     return ['guid' => $guid, 'weekday' => $weekday, 'hour' => $hour, 'minute' => $minute];

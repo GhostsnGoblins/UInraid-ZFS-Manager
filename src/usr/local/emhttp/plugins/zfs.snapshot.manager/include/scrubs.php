@@ -45,15 +45,13 @@ if ($pool === null) {
 
 if ($action === 'schedule') {
     $enabled = $_POST['enabled'] ?? '';
-    $weekday = filter_var($_POST['weekday'] ?? null, FILTER_VALIDATE_INT);
-    $hour = filter_var($_POST['hour'] ?? null, FILTER_VALIDATE_INT);
-    $minute = filter_var($_POST['minute'] ?? null, FILTER_VALIDATE_INT);
+    $weekday = zsm_parse_bounded_integer($_POST['weekday'] ?? null, 0, 6);
+    $hour = zsm_parse_bounded_integer($_POST['hour'] ?? null, 0, 23);
+    $minute = zsm_parse_bounded_integer($_POST['minute'] ?? null, 0, 59);
     if (!is_string($enabled) || !in_array($enabled, ['0', '1'], true)) {
         scrub_respond(400, ['ok' => false, 'message' => 'Ungültige Auto-Scrub-Einstellung.']);
     }
-    if ($weekday === false || $weekday < 0 || $weekday > 6
-        || $hour === false || $hour < 0 || $hour > 23
-        || $minute === false || $minute < 0 || $minute > 59) {
+    if ($weekday === null || $hour === null || $minute === null) {
         scrub_respond(400, ['ok' => false, 'message' => 'Ungültiger Wochentag oder ungültige Uhrzeit.']);
     }
 
