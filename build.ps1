@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.7.4',
+    [string]$Version = '0.7.5',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Fixes deletion of snapshots whose name or property value looked plugin-owned but whose local ownership metadata was missing
+- Uses the same ownership check for the snapshot table and the deletion backend
 - Suggests snapshot-<dataset> as the default snapshot share name
 - Adds one private, read-only SMB snapshot share per dataset with explicit users
 - Shows every snapshot of the dataset automatically and leaves normal Unraid shares unchanged

@@ -28,6 +28,18 @@ if [[ "${1:-}" == "destroy" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "get" && "$*" == *"-t snapshot"* ]]; then
+  printf 'tank/data@uzm_manual_20250101T000000Z\torg.unraidzfsmanager:kind\tmanual\tlocal\n'
+  printf 'tank/data@uzm_manual_20250101T000000Z\torg.unraidzfsmanager:policy\t-\t-\n'
+  printf 'tank/data@uzm_manual_20250102T000000Z\torg.unraidzfsmanager:kind\tmanual\treceived\n'
+  printf 'tank/data@uzm_manual_20250102T000000Z\torg.unraidzfsmanager:policy\t-\t-\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\torg.unraidzfsmanager:kind\tautomatic\tlocal\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\torg.unraidzfsmanager:policy\t0123456789abcdef0123456789abcdef\tlocal\n'
+  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\torg.unraidzfsmanager:kind\tautomatic\tlocal\n'
+  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\torg.unraidzfsmanager:policy\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\treceived\n'
+  exit 0
+fi
+
 if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:kind"* ]]; then
   if [[ "$target" == 'tank/data@uzm_manual_20250102T000000Z' ]]; then
     printf 'external\tlocal\n'
@@ -87,7 +99,10 @@ if [[ "${1:-}" == "list" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
 fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* ]]; then
-  printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\tmanual\n'
+  printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\n'
+  printf 'tank/data@uzm_manual_20250102T000000Z\t1735776000\t2048\t512\t-\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735862400\t1024\t256\t-\n'
+  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735948800\t512\t128\t-\n'
   exit 0
 fi
 
@@ -136,7 +151,10 @@ dataset_output="$("$backend" list-datasets)"
 [[ "$dataset_output" == $'tank/data\tfilesystem\t4096\t8192\t1024\t/mnt/tank/data' ]]
 
 snapshot_output="$("$backend" list-snapshots)"
-[[ "$snapshot_output" == $'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\tmanual' ]]
+[[ "$snapshot_output" == *$'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\tmanual\t1'* ]]
+[[ "$snapshot_output" == *$'tank/data@uzm_manual_20250102T000000Z\t1735776000\t2048\t512\t-\tmanual\t0'* ]]
+[[ "$snapshot_output" == *$'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735862400\t1024\t256\t-\tautomatic\t1'* ]]
+[[ "$snapshot_output" == *$'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735948800\t512\t128\t-\tautomatic\t0'* ]]
 
 before_invalid="$(wc -l < "$mock_log")"
 set +e

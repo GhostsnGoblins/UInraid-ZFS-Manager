@@ -84,10 +84,68 @@ list_datasets() {
     -o name,type,used,available,referenced,mountpoint -s name
 }
 
+plugin_snapshot_metadata_matches() {
+  local snapshot="$1"
+  local kind="$2"
+  local kind_source="$3"
+  local policy="${4:-}"
+  local policy_source="${5:-}"
+  local snapshot_name policy_id
+  snapshot_name="${snapshot##*@}"
+
+  if [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]; then
+    [[ "$kind" == "manual" && "$kind_source" == "local" ]]
+    return
+  fi
+
+  if [[ "$snapshot_name" =~ ^uzm_auto_([a-f0-9]{32})_[0-9]{8}T[0-9]{6}Z$ ]]; then
+    policy_id="${BASH_REMATCH[1]}"
+    [[ "$kind" == "automatic" && "$kind_source" == "local" \
+      && "$policy" == "$policy_id" && "$policy_source" == "local" ]]
+    return
+  fi
+  return 1
+}
+
 list_snapshots() {
   local zfs_bin="$1"
-  "$zfs_bin" list -H -p -t snapshot \
-    -o name,creation,used,referenced,clones,"$SNAPSHOT_KIND_PROPERTY" -s creation
+  local property_rows snapshot_rows name property value source
+  local creation used referenced clones owned
+  declare -A kind_values=()
+  declare -A kind_sources=()
+  declare -A policy_values=()
+  declare -A policy_sources=()
+
+  property_rows="$("$zfs_bin" get -H -p -t snapshot -o name,property,value,source \
+    "${SNAPSHOT_KIND_PROPERTY},${SNAPSHOT_POLICY_PROPERTY}" 2>/dev/null)" || property_rows=""
+  while IFS=$'\t' read -r name property value source; do
+    [[ -n "$name" ]] || continue
+    case "$property" in
+      "$SNAPSHOT_KIND_PROPERTY")
+        kind_values["$name"]="$value"
+        kind_sources["$name"]="$source"
+        ;;
+      "$SNAPSHOT_POLICY_PROPERTY")
+        policy_values["$name"]="$value"
+        policy_sources["$name"]="$source"
+        ;;
+    esac
+  done <<< "$property_rows"
+
+  snapshot_rows="$("$zfs_bin" list -H -p -t snapshot \
+    -o name,creation,used,referenced,clones -s creation)" || return
+  while IFS=$'\t' read -r name creation used referenced clones; do
+    [[ -n "$name" ]] || continue
+    owned=0
+    if plugin_snapshot_metadata_matches "$name" \
+        "${kind_values[$name]-}" "${kind_sources[$name]-}" \
+        "${policy_values[$name]-}" "${policy_sources[$name]-}"; then
+      owned=1
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$name" "$creation" "$used" "$referenced" "$clones" \
+      "${kind_values[$name]--}" "$owned"
+  done <<< "$snapshot_rows"
 }
 
 list_filesystems() {
@@ -290,23 +348,20 @@ require_no_snapshot_dependencies() {
 verify_plugin_snapshot_ownership() {
   local zfs_bin="$1"
   local snapshot="$2"
-  local snapshot_name ownership policy_id policy_ownership
-  snapshot_name="${snapshot##*@}"
+  local kind_record policy_record kind kind_source policy policy_source
+  kind_record="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$snapshot" 2>/dev/null)" \
+    || return 1
+  IFS=$'\t' read -r kind kind_source <<< "$kind_record"
 
-  if [[ "$snapshot_name" =~ ^uzm_manual_[0-9]{8}T[0-9]{6}Z$ ]]; then
-    ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$snapshot" 2>/dev/null)" \
-      && [[ "$ownership" == $'manual\tlocal' ]]
-    return
+  policy=""
+  policy_source=""
+  if [[ "${snapshot##*@}" =~ ^uzm_auto_ ]]; then
+    policy_record="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_POLICY_PROPERTY" "$snapshot" 2>/dev/null)" \
+      || return 1
+    IFS=$'\t' read -r policy policy_source <<< "$policy_record"
   fi
 
-  if [[ "$snapshot_name" =~ ^uzm_auto_([a-f0-9]{32})_[0-9]{8}T[0-9]{6}Z$ ]]; then
-    policy_id="${BASH_REMATCH[1]}"
-    ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$snapshot" 2>/dev/null)" \
-      && policy_ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_POLICY_PROPERTY" "$snapshot" 2>/dev/null)" \
-      && [[ "$ownership" == $'automatic\tlocal' && "$policy_ownership" == "${policy_id}"$'\tlocal' ]]
-    return
-  fi
-  return 1
+  plugin_snapshot_metadata_matches "$snapshot" "$kind" "$kind_source" "$policy" "$policy_source"
 }
 
 destroy_checked_snapshot() {

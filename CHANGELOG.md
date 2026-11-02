@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.5
+
+- Snapshot-Tabelle und Lösch-Backend verwenden dieselbe vollständige Eigentumsprüfung
+- replizierte, geerbte oder unvollständig markierte Snapshots korrekt als extern behandeln und kontrolliert löschen lassen
+
 ## 0.7.4
 
 - Datasets-Bereich ein- und ausklappbar machen, standardmäßig eingeklappt

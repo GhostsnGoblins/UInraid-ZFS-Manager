@@ -22,7 +22,7 @@ $datasets = $datasetResult['exitCode'] === 0
     ? zsm_parse_tsv($datasetResult['stdout'], ['name', 'type', 'used', 'available', 'referenced', 'mountpoint'])
     : [];
 $snapshots = $snapshotResult['exitCode'] === 0
-    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind'])
+    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind', 'owned'])
     : [];
 $policies = zsm_load_policies();
 $frequencyLabels = zsm_frequency_labels();
@@ -366,10 +366,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
       <?php else: ?>
         <?php foreach (array_reverse($snapshots) as $snapshot): ?>
           <?php
-          $isPluginSnapshot = ($snapshot['kind'] === 'manual'
-                  && preg_match('/@uzm_manual_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1)
-              || ($snapshot['kind'] === 'automatic'
-                  && preg_match('/@uzm_auto_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}Z$/D', $snapshot['name']) === 1);
+          $isPluginSnapshot = $snapshot['owned'] === '1';
           $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
           ?>
           <tr>

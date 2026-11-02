@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.7.4-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.7.5-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -29,8 +29,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.7.4';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.7.4.'
+if ($library -notmatch "const ZSM_VERSION = '0.7.5';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.7.5.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -55,7 +55,11 @@ if ($backend -notmatch '"\$zfs_bin" destroy "\$snapshot"') {
 if ($backend -match 'destroy\s+-[A-Za-z]*[rRf]' -or $backend -match 'zfs rollback|zfs clone') {
     throw 'Backend enthält eine rekursive, erzwungene oder anderweitig unerlaubte ZFS-Aktion.'
 }
-if ($backend -notmatch 'value,source' -or $backend -notmatch "manual\\tlocal" -or $backend -notmatch 'holds -H') {
+if ($backend -notmatch 'value,source' -or
+    -not $backend.Contains('plugin_snapshot_metadata_matches') -or
+    -not $backend.Contains('"$kind_source" == "local"') -or
+    -not $backend.Contains('"$policy_source" == "local"') -or
+    $backend -notmatch 'holds -H') {
     throw 'Backend prüft Eigentumskennzeichnung und ZFS-Holds vor dem Löschen nicht vollständig.'
 }
 if ($backend -notmatch 'clones_present' -or $backend -notmatch 'holds_present') {
@@ -114,6 +118,9 @@ if ($page -notmatch "window\.location\.reload") {
 if ($page -notmatch 'window\.confirm' -or $page -notmatch "external \? 'delete-external' : 'delete'") {
     throw 'Page-Datei enthält keine bestätigte Snapshot-Löschaktion.'
 }
+if ($page -notmatch "\`$snapshot\['owned'\] === '1'") {
+    throw 'Page-Datei verwendet nicht die serverseitig geprüfte Snapshot-Zuordnung.'
+}
 if ($page -match 'window\.prompt' -or $page -notmatch 'requestData\.confirmation = snapshot') {
     throw 'Fremde Snapshots verwenden nicht die einfache Sicherheitsabfrage.'
 }
@@ -164,7 +171,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.7.4-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.7.5-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
