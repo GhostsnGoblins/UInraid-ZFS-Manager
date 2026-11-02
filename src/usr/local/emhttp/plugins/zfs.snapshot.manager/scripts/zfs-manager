@@ -30,6 +30,13 @@ find_zfs() {
   printf '%s\n' "$binary"
 }
 
+find_zpool() {
+  local binary
+  binary="$(command -v zpool 2>/dev/null || true)"
+  [[ -n "$binary" && -x "$binary" ]] || fail "Der ZPool-Befehl wurde nicht gefunden." 127
+  printf '%s\n' "$binary"
+}
+
 is_valid_dataset() {
   local dataset="$1"
   [[ ${#dataset} -le 255 ]] || return 1
@@ -82,6 +89,107 @@ list_datasets() {
   local zfs_bin="$1"
   "$zfs_bin" list -H -p -t filesystem,volume \
     -o name,type,used,available,referenced,mountpoint -s name
+}
+
+timestamp_from_zpool_date() {
+  local value="$1"
+  local timestamp
+  timestamp="$(date -d "$value" '+%s' 2>/dev/null || true)"
+  [[ "$timestamp" =~ ^[0-9]+$ ]] && printf '%s' "$timestamp" || printf '0'
+}
+
+list_pools() {
+  local zpool_bin="$1"
+  local rows guid name health status scan first_line
+  local scan_type scan_state started completed repaired errors progress eta summary
+  local repaired_value completed_date scan_line
+
+  rows="$("$zpool_bin" list -H -p -o guid,name,health)" || return
+  while IFS=$'\t' read -r guid name health; do
+    [[ -n "$guid" && -n "$name" ]] || continue
+    scan_type="none"
+    scan_state="never"
+    started="0"
+    completed="0"
+    repaired="0"
+    errors="0"
+    progress=""
+    eta=""
+    summary="none requested"
+
+    if status="$("$zpool_bin" status -p "$name" 2>/dev/null)"; then
+      scan="$(awk '
+        /^[[:space:]]*scan:/ {
+          sub(/^[[:space:]]*scan:[[:space:]]*/, "")
+          print
+          collecting = 1
+          next
+        }
+        collecting && /^[[:space:]]*$/ { exit }
+        collecting && /^[[:space:]]*[a-z]+:/ { exit }
+        collecting {
+          sub(/^[[:space:]]+/, "")
+          print
+        }
+      ' <<< "$status")"
+      first_line="${scan%%$'\n'*}"
+      summary="${first_line//$'\t'/ }"
+
+      if [[ "$first_line" == "none requested" || -z "$first_line" ]]; then
+        scan_type="none"
+        scan_state="never"
+      elif [[ "$first_line" =~ ^scrub[[:space:]]+in[[:space:]]+progress[[:space:]]+since[[:space:]]+(.+)$ ]]; then
+        scan_type="scrub"
+        scan_state="in_progress"
+        started="$(timestamp_from_zpool_date "${BASH_REMATCH[1]}")"
+      elif [[ "$first_line" =~ ^scrub[[:space:]]+paused[[:space:]]+since[[:space:]]+(.+)$ ]]; then
+        scan_type="scrub"
+        scan_state="paused"
+        started="$(timestamp_from_zpool_date "${BASH_REMATCH[1]}")"
+      elif [[ "$first_line" =~ ^scrub[[:space:]]+repaired[[:space:]]+([^[:space:]]+)[[:space:]]+in[[:space:]].+[[:space:]]+with[[:space:]]+([0-9]+)[[:space:]]+errors?[[:space:]]+on[[:space:]]+(.+)$ ]]; then
+        scan_type="scrub"
+        scan_state="completed"
+        repaired_value="${BASH_REMATCH[1]}"
+        errors="${BASH_REMATCH[2]}"
+        completed_date="${BASH_REMATCH[3]}"
+        [[ "$repaired_value" =~ ^[0-9]+([.][0-9]+)?[[:alpha:]]*$ ]] && repaired="$repaired_value"
+        completed="$(timestamp_from_zpool_date "$completed_date")"
+      elif [[ "$first_line" =~ ^scrub[[:space:]]+canceled[[:space:]]+on[[:space:]]+(.+)$ ]]; then
+        scan_type="scrub"
+        scan_state="canceled"
+        completed="$(timestamp_from_zpool_date "${BASH_REMATCH[1]}")"
+      elif [[ "$first_line" == scrub* ]]; then
+        scan_type="scrub"
+        scan_state="unknown"
+      elif [[ "$first_line" == resilver* ]]; then
+        scan_type="resilver"
+        [[ "$first_line" == *"in progress since "* ]] && scan_state="in_progress" || scan_state="completed"
+      else
+        scan_type="other"
+        scan_state="unknown"
+      fi
+
+      if [[ "$scan" =~ ([0-9]+([.][0-9]+)?)%[[:space:]]+done ]]; then
+        progress="${BASH_REMATCH[1]}"
+      fi
+      while IFS= read -r scan_line; do
+        if [[ "$scan_line" =~ ,[[:space:]]*([^,]+)[[:space:]]+to[[:space:]]+go ]]; then
+          eta="${BASH_REMATCH[1]}"
+        fi
+      done <<< "$scan"
+      if [[ "$scan" =~ (^|[[:space:]])([0-9]+([.][0-9]+)?[[:alpha:]]*)[[:space:]]+repaired ]]; then
+        repaired="${BASH_REMATCH[2]}"
+      fi
+    else
+      scan_type="unknown"
+      scan_state="unavailable"
+      summary="Pool-Status konnte nicht gelesen werden"
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$guid" "$name" "$health" "$scan_type" "$scan_state" "$started" "$completed" \
+      "$repaired" "$errors" "$progress" "$eta" "$summary"
+  done <<< "$rows"
 }
 
 plugin_snapshot_metadata_matches() {
@@ -542,6 +650,11 @@ main() {
   if [[ "$command" == "remove-samba-config" ]]; then
     [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager remove-samba-config" 64
     remove_samba_config
+    return 0
+  fi
+  if [[ "$command" == "list-pools" ]]; then
+    [[ $# -eq 1 ]] || fail "Aufruf: zfs-manager list-pools" 64
+    list_pools "$(find_zpool)"
     return 0
   fi
 

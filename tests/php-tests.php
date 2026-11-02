@@ -124,4 +124,32 @@ $stats = zsm_snapshot_stats([
 check($stats['tank/a'] === ['count' => 3, 'latest' => 300], 'Anzahl und neuester Snapshot je Dataset');
 check($stats['tank/b'] === ['count' => 1, 'latest' => 0], 'ungültiger Zeitstempel wird ignoriert');
 
+$completedPool = [
+    'scan_type' => 'scrub',
+    'scan_state' => 'completed',
+    'scan_started' => '0',
+    'scan_completed' => '1793502000',
+    'repaired' => '0',
+    'errors' => '0',
+    'progress' => '',
+    'eta' => '',
+];
+check(zsm_pool_scan_label($completedPool) === 'Scrub abgeschlossen', 'abgeschlossener Scrub wird bezeichnet');
+check(zsm_pool_scan_timestamp($completedPool) === 1793502000, 'Abschlusszeit wird verwendet');
+check(zsm_pool_scan_result($completedPool) === '0 B repariert, 0 Fehler', 'Scrub-Ergebnis wird formatiert');
+check(zsm_pool_scan_progress($completedPool) === '-', 'abgeschlossener Scrub hat keinen Fortschritt');
+
+$runningPool = array_merge($completedPool, [
+    'scan_state' => 'in_progress',
+    'scan_started' => '1793592000',
+    'scan_completed' => '0',
+    'progress' => '5.00',
+    'eta' => '00:03:00',
+]);
+check(zsm_pool_scan_label($runningPool) === 'Scrub läuft', 'laufender Scrub wird bezeichnet');
+check(zsm_pool_scan_timestamp($runningPool) === 1793592000, 'Startzeit wird verwendet');
+check(zsm_pool_scan_progress($runningPool) === '5.00 %, etwa 00:03:00', 'Fortschritt und Restzeit werden formatiert');
+check(zsm_pool_scan_label(['scan_type' => 'none', 'scan_state' => 'never']) === 'Noch kein Scrub protokolliert', 'fehlender Scrub wird gemeldet');
+check(zsm_pool_scan_label(['scan_type' => 'resilver', 'scan_state' => 'completed']) === 'Letzter Scan war ein Resilver', 'Resilver wird nicht als Scrub ausgegeben');
+
 echo 'PHP-Tests erfolgreich.' . PHP_EOL;

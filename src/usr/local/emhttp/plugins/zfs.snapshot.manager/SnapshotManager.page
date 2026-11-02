@@ -17,12 +17,16 @@ else:
 
 $datasetResult = zsm_run(['list-datasets']);
 $snapshotResult = zsm_run(['list-snapshots']);
+$poolResult = zsm_run(['list-pools']);
 
 $datasets = $datasetResult['exitCode'] === 0
     ? zsm_parse_tsv($datasetResult['stdout'], ['name', 'type', 'used', 'available', 'referenced', 'mountpoint'])
     : [];
 $snapshots = $snapshotResult['exitCode'] === 0
     ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind', 'owned'])
+    : [];
+$pools = $poolResult['exitCode'] === 0
+    ? zsm_parse_tsv($poolResult['stdout'], ['guid', 'name', 'health', 'scan_type', 'scan_state', 'scan_started', 'scan_completed', 'repaired', 'errors', 'progress', 'eta', 'summary'])
     : [];
 $policies = zsm_load_policies();
 $frequencyLabels = zsm_frequency_labels();
@@ -36,6 +40,7 @@ $storedShareUsers = array_column(zsm_load_shares(), 'users', 'id');
 $serverName = (string) ($var['NAME'] ?? 'Tower');
 $vmOrphans = array_column(zsm_find_vm_orphans($snapshots, $filesystems), null, 'snapshot');
 $snapshotStats = zsm_snapshot_stats($snapshots);
+$healthyPoolCount = count(array_filter($pools, static fn(array $pool): bool => $pool['health'] === 'ONLINE'));
 
 $errors = [];
 if ($datasetResult['exitCode'] !== 0) {
@@ -43,6 +48,9 @@ if ($datasetResult['exitCode'] !== 0) {
 }
 if ($snapshotResult['exitCode'] !== 0) {
     $errors[] = $snapshotResult['stderr'] ?: 'Snapshots konnten nicht geladen werden.';
+}
+if ($poolResult['exitCode'] !== 0) {
+    $errors[] = $poolResult['stderr'] ?: 'Pool- und Scrub-Status konnten nicht geladen werden.';
 }
 
 $csrfToken = isset($var['csrf_token']) ? (string) $var['csrf_token'] : '';
@@ -78,6 +86,7 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-toolbar p { margin:0; }
 .zsm-state-good { color:#2e7d32; }
 .zsm-state-warn { color:#b26a00; }
+.zsm-state-bad { color:#d32f2f; }
 .zsm-danger { background:#b71c1c; color:#fff; border-color:#b71c1c; }
 .zsm-danger:hover { background:#8e0000; border-color:#8e0000; }
 .zsm-policy-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; align-items:end; margin:14px 0 18px; }
@@ -130,12 +139,17 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   <div class="zsm-card"><span>Datasets und ZVOLs</span><strong><?=count($datasets)?></strong></div>
   <div class="zsm-card"><span>Snapshots</span><strong><?=count($snapshots)?></strong></div>
   <div class="zsm-card"><span>Automatische Regeln</span><strong><?=count($policies)?></strong></div>
+  <div class="zsm-card">
+    <span>ZFS-Pools</span>
+    <strong class="<?=$pools && $healthyPoolCount === count($pools) ? 'zsm-state-good' : 'zsm-state-warn'?>"><?=$pools ? $healthyPoolCount . ' von ' . count($pools) . ' online' : '-'?></strong>
+  </div>
 </div>
 
 <div class="zsm-tabs" role="tablist">
   <button type="button" role="tab" data-zsm-tab="overview">Übersicht</button>
   <button type="button" role="tab" data-zsm-tab="policies">Automatische Snapshots (<?=count($policies)?>)</button>
   <button type="button" role="tab" data-zsm-tab="shares">Freigaben (<?=count($snapshotShares)?>)</button>
+  <button type="button" role="tab" data-zsm-tab="pools">Pools &amp; Scrub (<?=count($pools)?>)</button>
 </div>
 
 <section class="zsm-panel" data-zsm-panel="overview">
@@ -156,6 +170,38 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
   <?php else: ?>
     <p class="zsm-muted">Kein verwendbares ZFS-Dataset gefunden.</p>
   <?php endif; ?>
+</section>
+
+<section class="zsm-panel" data-zsm-panel="pools">
+  <h2>Pools &amp; Scrub</h2>
+  <p>Diese Ansicht liest den aktuellen ZFS-Status aus. Sie startet, pausiert oder beendet keine Scrubs. Ein Scrub prüft die Datenintegrität, ersetzt aber weder Snapshots noch Backups.</p>
+  <div class="zsm-table-wrap">
+    <table class="zsm-table">
+      <thead><tr><th data-sort="text">Pool</th><th data-sort="text">Zustand</th><th data-sort="text">Scrub</th><th data-sort="number">Zeitpunkt</th><th data-sort="text">Ergebnis</th><th data-sort="number">Fortschritt</th></tr></thead>
+      <tbody>
+      <?php if (!$pools): ?>
+        <tr><td colspan="6"><?=$arrayStarted ? 'Keine importierten ZFS-Pools gefunden.' : 'Das Array ist noch nicht gestartet.'?></td></tr>
+      <?php else: ?>
+        <?php foreach ($pools as $pool): ?>
+          <?php
+          $scanTimestamp = zsm_pool_scan_timestamp($pool);
+          $healthClass = $pool['health'] === 'ONLINE' ? 'zsm-state-good' : ($pool['health'] === 'DEGRADED' ? 'zsm-state-warn' : 'zsm-state-bad');
+          $scanWarning = in_array($pool['scan_state'], ['never', 'canceled', 'unknown', 'unavailable'], true)
+              || ($pool['scan_type'] === 'scrub' && ctype_digit($pool['errors']) && (int) $pool['errors'] > 0);
+          ?>
+          <tr>
+            <td><?=zsm_h($pool['name'])?><br><span class="zsm-muted">GUID <?=zsm_h($pool['guid'])?></span></td>
+            <td class="<?=$healthClass?>"><?=zsm_h($pool['health'])?></td>
+            <td class="<?=$scanWarning ? 'zsm-state-warn' : ''?>" title="<?=zsm_h($pool['summary'])?>"><?=zsm_h(zsm_pool_scan_label($pool))?></td>
+            <td data-sort-value="<?=$scanTimestamp?>"><?=zsm_h($scanTimestamp > 0 ? zsm_format_timestamp((string) $scanTimestamp) : '-')?></td>
+            <td class="<?=$pool['errors'] !== '0' ? 'zsm-state-warn' : ''?>"><?=zsm_h(zsm_pool_scan_result($pool))?></td>
+            <td data-sort-value="<?=zsm_h($pool['progress'])?>"><?=zsm_h(zsm_pool_scan_progress($pool))?></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="zsm-panel" data-zsm-panel="policies">

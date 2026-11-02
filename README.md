@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.7.5
+## Funktionsumfang 0.8.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -23,6 +23,7 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - Aktionen in Syslog und `/var/log/zfs.snapshot.manager.log` protokollieren
 - pro Dataset eine private, schreibgeschützte Snapshot-Freigabe für ausgewählte Benutzer einrichten
 - Unraid-Array-Zustand verständlich anzeigen
+- ZFS-Pool-Zustand und letzten beziehungsweise laufenden Scrub in einem eigenen, rein lesenden Tab anzeigen
 - Daten nach dem Array-Start manuell aktualisieren
 
 Diese Version verändert keine Docker- oder VM-Konfiguration. Samba wird nur für eingerichtete Snapshot-Freigaben ergänzt, normale Unraid-Freigaben bleiben unverändert. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
@@ -65,7 +66,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.7.5-noarch-1.txz`
+- `zfs.snapshot.manager-0.8.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren

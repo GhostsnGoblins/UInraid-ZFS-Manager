@@ -120,6 +120,63 @@ exit 1
 MOCK
 chmod 755 "$test_root/bin/zfs"
 
+cat > "$test_root/bin/zpool" <<'MOCK'
+#!/bin/bash
+set -u
+
+if [[ "${1:-}" == "list" ]]; then
+  printf '111\ttank\tONLINE\n'
+  printf '222\tbackup\tDEGRADED\n'
+  printf '333\tarchive\tONLINE\n'
+  printf '444\tmedia\tONLINE\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "status" ]]; then
+  case "${3:-}" in
+    tank)
+      cat <<'STATUS'
+  pool: tank
+ state: ONLINE
+  scan: scrub repaired 0B in 00:05:12 with 0 errors on Sun Nov  1 03:00:00 2026
+config:
+STATUS
+      ;;
+    backup)
+      cat <<'STATUS'
+  pool: backup
+ state: DEGRADED
+  scan: scrub in progress since Mon Nov  2 04:00:00 2026
+        1000 / 10000 scanned at 100/s, 500 / 10000 issued at 50/s
+        0B repaired, 5.00% done, 00:03:00 to go
+config:
+STATUS
+      ;;
+    archive)
+      cat <<'STATUS'
+  pool: archive
+ state: ONLINE
+  scan: none requested
+config:
+STATUS
+      ;;
+    media)
+      cat <<'STATUS'
+  pool: media
+ state: ONLINE
+  scan: resilvered 10G in 00:10:00 with 0 errors on Sun Nov  1 02:00:00 2026
+config:
+STATUS
+      ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
+
+exit 1
+MOCK
+chmod 755 "$test_root/bin/zpool"
+
 cat > "$test_root/bin/flock" <<'MOCK'
 #!/bin/bash
 printf '%s\n' "$*" >> "$MOCK_FLOCK_LOG"
@@ -155,6 +212,12 @@ snapshot_output="$("$backend" list-snapshots)"
 [[ "$snapshot_output" == *$'tank/data@uzm_manual_20250102T000000Z\t1735776000\t2048\t512\t-\tmanual\t0'* ]]
 [[ "$snapshot_output" == *$'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735862400\t1024\t256\t-\tautomatic\t1'* ]]
 [[ "$snapshot_output" == *$'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735948800\t512\t128\t-\tautomatic\t0'* ]]
+
+pool_output="$("$backend" list-pools)"
+[[ "$pool_output" == *$'111\ttank\tONLINE\tscrub\tcompleted\t0\t'*$'\t0B\t0\t\t\tscrub repaired 0B'* ]]
+[[ "$pool_output" == *$'222\tbackup\tDEGRADED\tscrub\tin_progress\t'*$'\t0\t0B\t0\t5.00\t00:03:00\tscrub in progress'* ]]
+[[ "$pool_output" == *$'333\tarchive\tONLINE\tnone\tnever\t0\t0\t0\t0\t\t\tnone requested'* ]]
+[[ "$pool_output" == *$'444\tmedia\tONLINE\tresilver\tcompleted\t0\t0\t0\t0\t\t\tresilvered'* ]]
 
 before_invalid="$(wc -l < "$mock_log")"
 set +e

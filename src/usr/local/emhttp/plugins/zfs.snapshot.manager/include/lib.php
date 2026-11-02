@@ -12,7 +12,7 @@ const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
 const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
-const ZSM_VERSION = '0.7.5';
+const ZSM_VERSION = '0.8.0';
 
 function zsm_is_enabled(): bool
 {
@@ -92,6 +92,65 @@ function zsm_weekday_labels(): array
         5 => 'Freitag',
         6 => 'Samstag',
     ];
+}
+
+/** @param array<string,string> $pool */
+function zsm_pool_scan_label(array $pool): string
+{
+    $type = $pool['scan_type'] ?? 'unknown';
+    $state = $pool['scan_state'] ?? 'unknown';
+    if ($type === 'none') {
+        return 'Noch kein Scrub protokolliert';
+    }
+    if ($type === 'resilver') {
+        return $state === 'in_progress' ? 'Resilver läuft' : 'Letzter Scan war ein Resilver';
+    }
+    if ($type !== 'scrub') {
+        return $state === 'unavailable' ? 'Nicht verfügbar' : 'Unbekannter Scan-Status';
+    }
+
+    $labels = [
+        'in_progress' => 'Scrub läuft',
+        'paused' => 'Scrub pausiert',
+        'completed' => 'Scrub abgeschlossen',
+        'canceled' => 'Scrub abgebrochen',
+        'unavailable' => 'Nicht verfügbar',
+    ];
+    return $labels[$state] ?? 'Unbekannter Scrub-Status';
+}
+
+/** @param array<string,string> $pool */
+function zsm_pool_scan_timestamp(array $pool): int
+{
+    $state = $pool['scan_state'] ?? '';
+    $raw = in_array($state, ['completed', 'canceled'], true)
+        ? ($pool['scan_completed'] ?? '0')
+        : ($pool['scan_started'] ?? '0');
+    return ctype_digit($raw) ? (int) $raw : 0;
+}
+
+/** @param array<string,string> $pool */
+function zsm_pool_scan_result(array $pool): string
+{
+    if (($pool['scan_type'] ?? '') !== 'scrub'
+        || !in_array($pool['scan_state'] ?? '', ['completed', 'in_progress', 'paused'], true)) {
+        return '-';
+    }
+    $repaired = zsm_format_bytes($pool['repaired'] ?? '0');
+    $errors = ctype_digit($pool['errors'] ?? '') ? (int) $pool['errors'] : 0;
+    return $repaired . ' repariert, ' . $errors . ' Fehler';
+}
+
+/** @param array<string,string> $pool */
+function zsm_pool_scan_progress(array $pool): string
+{
+    $progress = $pool['progress'] ?? '';
+    if ($progress === '') {
+        return ($pool['scan_state'] ?? '') === 'in_progress' ? 'Wird ermittelt' : '-';
+    }
+    $label = $progress . ' %';
+    $eta = trim($pool['eta'] ?? '');
+    return $eta === '' ? $label : $label . ', etwa ' . $eta;
 }
 
 /**

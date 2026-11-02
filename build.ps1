@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.7.5',
+    [string]$Version = '0.8.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,10 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds a read-only Pools & Scrub tab with pool health and scrub status
+- Shows completed, running, paused, canceled, missing, and superseded scrub information
+- Displays scrub timestamps, repaired bytes, errors, progress, and estimated remaining time
+- Uses stable ZFS pool GUIDs in the status data
 - Fixes deletion of snapshots whose name or property value looked plugin-owned but whose local ownership metadata was missing
 - Uses the same ownership check for the snapshot table and the deletion backend
 - Suggests snapshot-<dataset> as the default snapshot share name

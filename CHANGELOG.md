@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- neuen rein lesenden Tab `Pools & Scrub` ergänzen
+- Pool-Zustand über die stabile ZFS-Pool-GUID erfassen
+- abgeschlossene, laufende, pausierte und abgebrochene Scrubs anzeigen
+- Fortschritt, Restzeit, reparierte Daten und Fehler aus `zpool status` darstellen
+- Resilver-Vorgänge ausdrücklich nicht als letzten Scrub ausgeben
+
 ## 0.7.5
 
 - Snapshot-Tabelle und Lösch-Backend verwenden dieselbe vollständige Eigentumsprüfung
