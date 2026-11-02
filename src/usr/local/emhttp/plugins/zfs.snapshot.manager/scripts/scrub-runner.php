@@ -12,10 +12,16 @@ if (!zsm_is_enabled()) {
     exit(0);
 }
 
-$enabled = array_fill_keys(zsm_load_auto_scrub_guids(), true);
-if ($enabled === []) {
+$schedules = zsm_load_scrub_schedules();
+if ($schedules === []) {
     exit(0);
 }
+$dispatcherLock = @fopen('/var/run/zfs.snapshot.manager.scrub-dispatch.lock', 'c');
+if ($dispatcherLock === false || !flock($dispatcherLock, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
+$schedulesByGuid = array_column($schedules, null, 'guid');
+$now = new DateTimeImmutable('now');
 
 $poolResult = zsm_run(['list-pools'], 30);
 if ($poolResult['exitCode'] !== 0) {
@@ -33,11 +39,19 @@ foreach ($pools as $pool) {
 
 $due = array_values(array_filter(
     $pools,
-    static fn(array $pool): bool => isset($enabled[$pool['guid']])
+    static fn(array $pool): bool => isset($schedulesByGuid[$pool['guid']])
         && $pool['health'] === 'ONLINE'
+        && zsm_scrub_schedule_ready($schedulesByGuid[$pool['guid']], $now)
         && zsm_scrub_is_due($pool)
 ));
-usort($due, static function (array $first, array $second): int {
+usort($due, static function (array $first, array $second) use ($schedulesByGuid): int {
+    $firstSchedule = $schedulesByGuid[$first['guid']];
+    $secondSchedule = $schedulesByGuid[$second['guid']];
+    $bySchedule = ($firstSchedule['hour'] * 60 + $firstSchedule['minute'])
+        <=> ($secondSchedule['hour'] * 60 + $secondSchedule['minute']);
+    if ($bySchedule !== 0) {
+        return $bySchedule;
+    }
     $byTime = zsm_pool_scan_timestamp($first) <=> zsm_pool_scan_timestamp($second);
     return $byTime !== 0 ? $byTime : strcmp($first['guid'], $second['guid']);
 });

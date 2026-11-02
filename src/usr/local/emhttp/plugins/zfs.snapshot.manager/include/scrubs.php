@@ -21,7 +21,7 @@ if (!zsm_is_enabled()) {
 
 $action = $_POST['action'] ?? '';
 $guid = $_POST['guid'] ?? '';
-if (!is_string($action) || !in_array($action, ['toggle', 'start', 'stop'], true)) {
+if (!is_string($action) || !in_array($action, ['schedule', 'start', 'stop'], true)) {
     scrub_respond(400, ['ok' => false, 'message' => 'Unbekannte Scrub-Aktion.']);
 }
 if (!is_string($guid) || !zsm_is_valid_pool_guid($guid)) {
@@ -43,30 +43,44 @@ if ($pool === null) {
     scrub_respond(404, ['ok' => false, 'message' => 'Der ausgewählte ZFS-Pool wurde nicht gefunden.']);
 }
 
-if ($action === 'toggle') {
+if ($action === 'schedule') {
     $enabled = $_POST['enabled'] ?? '';
+    $weekday = filter_var($_POST['weekday'] ?? null, FILTER_VALIDATE_INT);
+    $hour = filter_var($_POST['hour'] ?? null, FILTER_VALIDATE_INT);
+    $minute = filter_var($_POST['minute'] ?? null, FILTER_VALIDATE_INT);
     if (!is_string($enabled) || !in_array($enabled, ['0', '1'], true)) {
         scrub_respond(400, ['ok' => false, 'message' => 'Ungültige Auto-Scrub-Einstellung.']);
     }
-    $previous = zsm_load_auto_scrub_guids();
-    $updated = array_values(array_filter($previous, static fn(string $item): bool => $item !== $guid));
-    if ($enabled === '1') {
-        $updated[] = $guid;
+    if ($weekday === false || $weekday < 0 || $weekday > 6
+        || $hour === false || $hour < 0 || $hour > 23
+        || $minute === false || $minute < 0 || $minute > 59) {
+        scrub_respond(400, ['ok' => false, 'message' => 'Ungültiger Wochentag oder ungültige Uhrzeit.']);
     }
-    if (!zsm_save_auto_scrub_guids($updated)) {
+
+    $previous = zsm_load_scrub_schedules();
+    $updated = array_values(array_filter(
+        $previous,
+        static fn(array $item): bool => $item['guid'] !== $guid
+    ));
+    if ($enabled === '1') {
+        $updated[] = ['guid' => $guid, 'weekday' => $weekday, 'hour' => $hour, 'minute' => $minute];
+    }
+    if (!zsm_save_scrub_schedules($updated)) {
         scrub_respond(500, ['ok' => false, 'message' => 'Die Auto-Scrub-Einstellung konnte nicht gespeichert werden.']);
     }
     $cronResult = zsm_apply_cron();
     if ($cronResult['exitCode'] !== 0) {
-        zsm_save_auto_scrub_guids($previous);
+        zsm_save_scrub_schedules($previous);
         zsm_apply_cron();
         scrub_respond(500, ['ok' => false, 'message' => 'Die Einstellung wurde zurückgesetzt, weil Unraid Cron nicht aktualisiert werden konnte: ' . $cronResult['stderr']]);
     }
+    $weekdayLabel = zsm_weekday_labels()[$weekday];
     scrub_respond(200, [
         'ok' => true,
         'enabled' => $enabled === '1',
+        'schedule' => ['guid' => $guid, 'weekday' => $weekday, 'hour' => $hour, 'minute' => $minute],
         'message' => $enabled === '1'
-            ? 'Der monatliche Auto-Scrub wurde für ' . $pool['name'] . ' aktiviert.'
+            ? sprintf('Der monatliche Auto-Scrub für %s ist für %s ab %02d:%02d Uhr eingeplant.', $pool['name'], $weekdayLabel, $hour, $minute)
             : 'Der monatliche Auto-Scrub wurde für ' . $pool['name'] . ' deaktiviert.',
     ]);
 }

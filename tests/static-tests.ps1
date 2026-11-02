@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.9.0-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.10.0-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -31,8 +31,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.9.0';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.9.0.'
+if ($library -notmatch "const ZSM_VERSION = '0.10.0';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.10.0.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -46,8 +46,9 @@ if ($library -notmatch 'function zsm_policy_scopes_overlap' -or $library -notmat
 if ($library -notmatch "zsm_run\(\['refresh-cron'\]") {
     throw 'Cron-Aktualisierung wird nicht über das installierte Backend ausgeführt.'
 }
-if ($library -notmatch 'function zsm_load_auto_scrub_guids' -or $library -notmatch 'ZSM_SCRUB_RUNNER' -or $library -notmatch "'0 3 \* \* \* /usr/bin/php %s") {
-    throw 'Persistente Auto-Scrub-Konfiguration oder täglicher Cron-Lauf fehlt.'
+if ($library -notmatch 'function zsm_load_scrub_schedules' -or $library -notmatch 'function zsm_scrub_schedule_ready' -or
+    $library -notmatch 'ZSM_SCRUB_RUNNER' -or $library -notmatch "'\* \* \* \* \* /usr/bin/php %s") {
+    throw 'Persistente Auto-Scrub-Zeitpläne oder der zentrale Dispatcher fehlen.'
 }
 
 $backend = Get-Content -Raw -LiteralPath $backendPath
@@ -91,8 +92,9 @@ if ($backend -notmatch 'list-pools' -or $backend -notmatch 'status -p "\$name"')
 if ($backend -notmatch '"\$zpool_bin" scrub "\$name"' -or $backend -notmatch '"\$zpool_bin" scrub -s "\$name"' -or $backend -notmatch 'is_valid_pool_guid') {
     throw 'Manueller Scrub-Start, Abbruch oder GUID-Prüfung fehlt.'
 }
-if ($backend -notmatch 'any_pool_scan_active' -or $backend -notmatch 'SCRUB_LOCK_FILE') {
-    throw 'Scrub-Aktionen verhindern keine parallelen Scans oder konkurrierenden Starts.'
+if ($backend -notmatch 'any_pool_scan_active' -or $backend -notmatch 'SCRUB_LOCK_FILE' -or
+    $backend -notmatch 'if \[\[ "\$mode" == "automatic" \]\]' -or $backend -notmatch 'lock_snapshot_action 60') {
+    throw 'Scrub-Aktionen verhindern keine parallelen Scans, Snapshot-Aktionen oder konkurrierenden Starts.'
 }
 if ($backend -notmatch 'snapshot_arguments\+=\(-r\)' -or $backend -notmatch 'mapfile -t candidates') {
     throw 'Rekursive Erstellung oder vollständige Löschvorprüfung fehlt.'
@@ -147,8 +149,12 @@ if ($page -notmatch 'data-zsm-panel="policies"' -or $page -notmatch 'data-zsm-pa
 if ($page -notmatch 'data-zsm-panel="pools"' -or $page -notmatch "zsm_run\(\['list-pools'\]\)" -or $page -notmatch 'Pools &amp; Scrub') {
     throw 'Pool- und Scrub-Status liegen nicht im vorgesehenen eigenen Tab.'
 }
-if ($page -notmatch 'zsm-auto-scrub' -or $page -notmatch 'zsm-scrub-start' -or $page -notmatch 'zsm-scrub-stop') {
-    throw 'Pool-Tabelle enthält keine Auto-Scrub-Checkbox oder manuellen Scrub-Aktionen.'
+if ($page -notmatch 'zsm-auto-scrub' -or $page -notmatch 'zsm-scrub-weekday' -or $page -notmatch 'zsm-scrub-time' -or
+    $page -notmatch 'zsm-scrub-start' -or $page -notmatch 'zsm-scrub-stop') {
+    throw 'Pool-Tabelle enthält keinen vollständigen Auto-Scrub-Zeitplan oder keine manuellen Scrub-Aktionen.'
+}
+if ($page -match "\.data\('guid'\)") {
+    throw 'Pool-GUIDs dürfen im Browser nicht als JavaScript-Zahlen interpretiert werden.'
 }
 if ($page -notmatch '<details id="zsm-datasets">') {
     throw 'Datasets sind nicht einklappbar oder nicht standardmäßig eingeklappt.'
@@ -191,7 +197,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.9.0-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.10.0-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
@@ -241,13 +247,14 @@ if ($scrubEndpoint -match 'shell_exec|exec\s*\(|system\s*\(|passthru\s*\(' -or
     $scrubEndpoint -notmatch "\['stop-scrub', \`$guid\]") {
     throw 'Scrub-Endpunkt verwendet keine fest definierten Backend-Aktionen.'
 }
-if ($scrubEndpoint -notmatch 'zsm_save_auto_scrub_guids' -or $scrubEndpoint -notmatch 'zsm_apply_cron') {
-    throw 'Scrub-Endpunkt speichert die GUID-Auswahl oder aktualisiert Cron nicht.'
+if ($scrubEndpoint -notmatch 'zsm_save_scrub_schedules' -or $scrubEndpoint -notmatch "'schedule'" -or $scrubEndpoint -notmatch 'zsm_apply_cron') {
+    throw 'Scrub-Endpunkt speichert Wochentag und Uhrzeit nicht oder aktualisiert Cron nicht.'
 }
 $scrubRunner = Get-Content -Raw -LiteralPath $scrubRunnerPath
 if ($scrubRunner -notmatch "\['start-scrub', \`$due\[0\]\['guid'\], 'automatic'\]" -or
-    $scrubRunner -notmatch 'zsm_scrub_is_due' -or $scrubRunner -notmatch "\['in_progress', 'paused'\]") {
-    throw 'Auto-Scrub-Runner prüft Fälligkeit oder laufende Scans nicht vollständig.'
+    $scrubRunner -notmatch 'zsm_scrub_is_due' -or $scrubRunner -notmatch 'zsm_scrub_schedule_ready' -or
+    $scrubRunner -notmatch "\['in_progress', 'paused'\]" -or $scrubRunner -notmatch 'LOCK_EX \| LOCK_NB') {
+    throw 'Auto-Scrub-Runner prüft Zeitplan, Fälligkeit oder laufende Scans nicht vollständig.'
 }
 $eventStarted = Get-Content -Raw -LiteralPath $eventStartedPath
 if ($eventStarted -notmatch 'apply-cron\.php') {

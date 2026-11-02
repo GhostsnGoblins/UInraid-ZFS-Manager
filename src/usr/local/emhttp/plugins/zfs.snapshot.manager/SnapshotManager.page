@@ -41,7 +41,7 @@ $serverName = (string) ($var['NAME'] ?? 'Tower');
 $vmOrphans = array_column(zsm_find_vm_orphans($snapshots, $filesystems), null, 'snapshot');
 $snapshotStats = zsm_snapshot_stats($snapshots);
 $healthyPoolCount = count(array_filter($pools, static fn(array $pool): bool => $pool['health'] === 'ONLINE'));
-$autoScrubGuids = zsm_load_auto_scrub_guids();
+$scrubSchedules = zsm_load_scrub_schedules();
 $anyPoolScanActive = count(array_filter($pools, static fn(array $pool): bool =>
     in_array($pool['scan_type'], ['scrub', 'resilver'], true)
     && in_array($pool['scan_state'], ['in_progress', 'paused'], true))) > 0;
@@ -103,6 +103,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-scrub-auto { display:flex; align-items:flex-start; gap:7px; }
 .zsm-scrub-auto input { margin:2px 0 0; }
 .zsm-scrub-auto span { display:block; }
+.zsm-scrub-weekday { min-width:110px; }
+.zsm-scrub-time { min-width:90px; }
 .zsm-policy-scope { grid-column:1/-1; padding:9px 11px; border-left:3px solid #ff8c00; background:rgba(255,140,0,.08); }
 .zsm-share-users { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px 16px; }
 .zsm-share-users label { flex-direction:row; align-items:center; gap:6px; }
@@ -181,13 +183,13 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <section class="zsm-panel" data-zsm-panel="pools">
   <h2>Pools &amp; Scrub</h2>
-  <p>Ein Scrub prüft die Datenintegrität, ersetzt aber weder Snapshots noch Backups. Ohne Redundanz kann ZFS beschädigte Daten nur erkennen, nicht selbst reparieren. Monatliche Auto-Scrubs werden täglich um 03:00 Uhr auf Fälligkeit geprüft und frühestens 30 Tage nach dem letzten abgeschlossenen Scrub gestartet. Um die I/O-Last zu begrenzen, läuft höchstens ein Scrub oder Resilver gleichzeitig.</p>
+  <p>Ein Scrub prüft die Datenintegrität, ersetzt aber weder Snapshots noch Backups. Ohne Redundanz kann ZFS beschädigte Daten nur erkennen, nicht selbst reparieren. Monatliche Auto-Scrubs werden am gewählten Wochentag ab der gewählten Uhrzeit und frühestens 30 Tage nach dem letzten abgeschlossenen Scrub gestartet. Ein zentraler Dispatcher stellt sicher, dass höchstens ein Scrub oder Resilver gleichzeitig läuft. Bei gleichen Zeiten werden fällige Pools nacheinander verarbeitet.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th data-sort="text">Pool</th><th data-sort="text">Zustand</th><th data-sort="text">Scrub</th><th data-sort="number">Zeitpunkt</th><th data-sort="text">Ergebnis</th><th data-sort="number">Fortschritt</th><th>Auto-Scrub</th><th>Aktion</th></tr></thead>
+      <thead><tr><th data-sort="text">Pool</th><th data-sort="text">Zustand</th><th data-sort="text">Scrub</th><th data-sort="number">Zeitpunkt</th><th data-sort="text">Ergebnis</th><th data-sort="number">Fortschritt</th><th>Auto-Scrub</th><th>Wochentag</th><th>Uhrzeit</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$pools): ?>
-        <tr><td colspan="8"><?=$arrayStarted ? 'Keine importierten ZFS-Pools gefunden.' : 'Das Array ist noch nicht gestartet.'?></td></tr>
+        <tr><td colspan="10"><?=$arrayStarted ? 'Keine importierten ZFS-Pools gefunden.' : 'Das Array ist noch nicht gestartet.'?></td></tr>
       <?php else: ?>
         <?php foreach ($pools as $pool): ?>
           <?php
@@ -195,10 +197,13 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
           $healthClass = $pool['health'] === 'ONLINE' ? 'zsm-state-good' : ($pool['health'] === 'DEGRADED' ? 'zsm-state-warn' : 'zsm-state-bad');
           $scanWarning = in_array($pool['scan_state'], ['never', 'canceled', 'unknown', 'unavailable'], true)
               || ($pool['scan_type'] === 'scrub' && ctype_digit($pool['errors']) && (int) $pool['errors'] > 0);
-          $autoScrubEnabled = in_array($pool['guid'], $autoScrubGuids, true);
+          $scrubSchedule = zsm_find_scrub_schedule($scrubSchedules, $pool['guid']);
+          $autoScrubEnabled = $scrubSchedule !== null;
+          $scrubSchedule ??= ['guid' => $pool['guid'], 'weekday' => 0, 'hour' => 3, 'minute' => 0];
           $scrubRunning = $pool['scan_type'] === 'scrub' && in_array($pool['scan_state'], ['in_progress', 'paused'], true);
           $canStartScrub = !$anyPoolScanActive && in_array($pool['health'], ['ONLINE', 'DEGRADED'], true);
-          $nextScrubCheck = zsm_next_scrub_check($pool);
+          $nextScrubRun = zsm_next_scrub_run($pool, $scrubSchedule);
+          $scrubReady = $autoScrubEnabled && zsm_scrub_is_due($pool) && zsm_scrub_schedule_ready($scrubSchedule);
           ?>
           <tr>
             <td><?=zsm_h($pool['name'])?><br><span class="zsm-muted">GUID <?=zsm_h($pool['guid'])?></span></td>
@@ -207,10 +212,18 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
             <td data-sort-value="<?=$scanTimestamp?>"><?=zsm_h($scanTimestamp > 0 ? zsm_format_timestamp((string) $scanTimestamp) : '-')?></td>
             <td class="<?=$pool['errors'] !== '0' ? 'zsm-state-warn' : ''?>"><?=zsm_h(zsm_pool_scan_result($pool))?></td>
             <td data-sort-value="<?=zsm_h($pool['progress'])?>"><?=zsm_h(zsm_pool_scan_progress($pool))?></td>
-            <td><label class="zsm-scrub-auto">
-              <input type="checkbox" class="zsm-auto-scrub" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>"<?=$autoScrubEnabled ? ' checked' : ''?>>
-              <span>Monatlich<?php if ($autoScrubEnabled): ?><br><small class="zsm-muted">Nächste Prüfung: <?=zsm_h($nextScrubCheck->format('d.m.Y H:i'))?> Uhr</small><?php endif; ?></span>
-            </label></td>
+            <td>
+              <div class="zsm-scrub-schedule" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>" data-saved-enabled="<?=$autoScrubEnabled ? '1' : '0'?>" data-saved-weekday="<?=$scrubSchedule['weekday']?>" data-saved-time="<?=sprintf('%02d:%02d', $scrubSchedule['hour'], $scrubSchedule['minute'])?>">
+                <label class="zsm-scrub-auto"><input type="checkbox" class="zsm-auto-scrub"<?=$autoScrubEnabled ? ' checked' : ''?>><span>Monatlich</span></label>
+                <small class="zsm-muted zsm-scrub-next"<?=$autoScrubEnabled ? '' : ' style="display:none"'?>><?=$autoScrubEnabled ? ($scrubRunning ? 'Scrub läuft gerade' : ($scrubReady ? 'Fällig, wartet auf freien Slot' : 'Frühestens ' . zsm_h($nextScrubRun->format('d.m.Y H:i')) . ' Uhr')) : ''?></small>
+              </div>
+            </td>
+            <td><select class="zsm-scrub-weekday"<?=$autoScrubEnabled ? '' : ' disabled'?>>
+              <?php foreach ([1, 2, 3, 4, 5, 6, 0] as $weekday): ?>
+                <option value="<?=$weekday?>"<?=$scrubSchedule['weekday'] === $weekday ? ' selected' : ''?>><?=zsm_h($weekdayLabels[$weekday])?></option>
+              <?php endforeach; ?>
+            </select></td>
+            <td><input type="time" class="zsm-scrub-time" step="60" value="<?=sprintf('%02d:%02d', $scrubSchedule['hour'], $scrubSchedule['minute'])?>"<?=$autoScrubEnabled ? '' : ' disabled'?>></td>
             <td><div class="zsm-policy-actions">
               <?php if ($scrubRunning): ?>
                 <button type="button" class="zsm-scrub-stop zsm-danger" data-guid="<?=zsm_h($pool['guid'])?>" data-pool="<?=zsm_h($pool['name'])?>">Scrub abbrechen</button>
@@ -561,11 +574,9 @@ $(function () {
   }
 
   function scrubRequest(data, button, waitingLabel, fallbackMessage) {
-    var originalLabel = button.is(':checkbox') ? '' : button.text();
+    var originalLabel = button.text();
     button.prop('disabled', true);
-    if (!button.is(':checkbox')) {
-      button.text(waitingLabel);
-    }
+    button.text(waitingLabel);
     data.csrf_token = <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
     $.ajax({
       url: '/plugins/zfs.snapshot.manager/include/scrubs.php',
@@ -578,21 +589,72 @@ $(function () {
     }).fail(function (xhr) {
       showMessage((xhr.responseJSON || {}).message || fallbackMessage, true);
       button.prop('disabled', false);
-      if (button.is(':checkbox')) {
-        button.prop('checked', !button.prop('checked'));
-      } else {
-        button.text(originalLabel);
+      button.text(originalLabel);
+    });
+  }
+
+  function restoreScrubSchedule(container) {
+    var row = container.closest('tr');
+    var enabled = container.attr('data-saved-enabled') === '1';
+    row.find('.zsm-auto-scrub').prop('checked', enabled).prop('disabled', false);
+    row.find('.zsm-scrub-weekday').val(container.attr('data-saved-weekday')).prop('disabled', !enabled);
+    row.find('.zsm-scrub-time').val(container.attr('data-saved-time')).prop('disabled', !enabled);
+  }
+
+  function saveScrubSchedule(container) {
+    var row = container.closest('tr');
+    var checkbox = row.find('.zsm-auto-scrub');
+    var weekday = String(row.find('.zsm-scrub-weekday').val() || '');
+    var time = String(row.find('.zsm-scrub-time').val() || '');
+    var timeParts = /^(\d{2}):(\d{2})$/.exec(time);
+    if (!timeParts) {
+      showMessage('Bitte gib eine gültige Uhrzeit an.', true);
+      restoreScrubSchedule(container);
+      return;
+    }
+
+    row.find('.zsm-auto-scrub, .zsm-scrub-weekday, .zsm-scrub-time').prop('disabled', true);
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/scrubs.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        action: 'schedule',
+        guid: String(container.attr('data-guid') || ''),
+        enabled: checkbox.prop('checked') ? '1' : '0',
+        weekday: weekday,
+        hour: timeParts[1],
+        minute: timeParts[2],
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>
       }
+    }).done(function (response) {
+      var enabled = response.enabled === true;
+      container.attr('data-saved-enabled', enabled ? '1' : '0');
+      container.attr('data-saved-weekday', weekday);
+      container.attr('data-saved-time', time);
+      checkbox.prop('disabled', false);
+      row.find('.zsm-scrub-weekday, .zsm-scrub-time').prop('disabled', !enabled);
+      container.find('.zsm-scrub-next')
+        .text(enabled ? 'Aktiv: ' + row.find('.zsm-scrub-weekday option:selected').text() + ' ab ' + time + ' Uhr' : '')
+        .toggle(enabled);
+      showMessage(response.message, false);
+    }).fail(function (xhr) {
+      restoreScrubSchedule(container);
+      showMessage((xhr.responseJSON || {}).message || 'Der Auto-Scrub-Zeitplan konnte nicht gespeichert werden.', true);
     });
   }
 
   $('.zsm-auto-scrub').on('change', function () {
-    var checkbox = $(this);
-    scrubRequest({
-      action: 'toggle',
-      guid: String(checkbox.data('guid') || ''),
-      enabled: checkbox.prop('checked') ? '1' : '0'
-    }, checkbox, '', 'Die Auto-Scrub-Einstellung konnte nicht gespeichert werden.');
+    var row = $(this).closest('tr');
+    row.find('.zsm-scrub-weekday, .zsm-scrub-time').prop('disabled', false);
+    saveScrubSchedule(row.find('.zsm-scrub-schedule'));
+  });
+
+  $('.zsm-scrub-weekday, .zsm-scrub-time').on('change', function () {
+    var row = $(this).closest('tr');
+    if (row.find('.zsm-auto-scrub').prop('checked')) {
+      saveScrubSchedule(row.find('.zsm-scrub-schedule'));
+    }
   });
 
   $('.zsm-scrub-start').on('click', function () {
@@ -604,7 +666,7 @@ $(function () {
       warning += '\n\nDer Pool ist DEGRADED. Prüfe den Zustand besonders sorgfältig.';
     }
     if (window.confirm(warning)) {
-      scrubRequest({ action: 'start', guid: String(button.data('guid') || '') }, button, 'Wird gestartet...', 'Der Scrub konnte nicht gestartet werden.');
+      scrubRequest({ action: 'start', guid: String(button.attr('data-guid') || '') }, button, 'Wird gestartet...', 'Der Scrub konnte nicht gestartet werden.');
     }
   });
 
@@ -612,7 +674,7 @@ $(function () {
     var button = $(this);
     var pool = String(button.data('pool') || '');
     if (window.confirm('Laufenden Scrub für ' + pool + ' wirklich abbrechen?')) {
-      scrubRequest({ action: 'stop', guid: String(button.data('guid') || '') }, button, 'Wird abgebrochen...', 'Der Scrub konnte nicht abgebrochen werden.');
+      scrubRequest({ action: 'stop', guid: String(button.attr('data-guid') || '') }, button, 'Wird abgebrochen...', 'Der Scrub konnte nicht abgebrochen werden.');
     }
   });
 

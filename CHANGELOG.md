@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- Wochentag von Montag bis Sonntag und Uhrzeit pro monatlichem Auto-Scrub auswählbar machen
+- fällige Pool-Scrubs über einen zentralen minütlichen Dispatcher kontrolliert nacheinander starten
+- weiterhin höchstens einen Scrub oder Resilver gleichzeitig zulassen
+- bestehende Auto-Scrub-Auswahl aus Version 0.9.0 automatisch auf Sonntag um 03:00 Uhr migrieren
+- Zurückspringen der Auto-Scrub-Checkbox nach erfolgreichem Speichern beheben
+- Pool-GUIDs im Browser ohne mögliche numerische Umwandlung als exakte Zeichenfolge übertragen
+
 ## 0.9.0
 
 - Scrubs pro ZFS-Pool manuell starten und laufende Scrubs abbrechen

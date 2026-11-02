@@ -241,6 +241,11 @@ start_scrub() {
   is_valid_pool_guid "$guid" || fail "Ungültige Pool-GUID." 64
   exec 6>"$SCRUB_LOCK_FILE"
   flock -n 6 || fail "Eine andere Scrub-Aktion läuft bereits." 75
+  if [[ "$mode" == "automatic" ]]; then
+    lock_snapshot_action 60
+  else
+    lock_snapshot_action
+  fi
   record="$(pool_record_from_guid "$zpool_bin" "$guid")" || exit $?
   IFS=$'\t' read -r name health <<< "$record"
 

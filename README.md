@@ -2,7 +2,7 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.9.0
+## Funktionsumfang 0.10.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
@@ -25,7 +25,8 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - Unraid-Array-Zustand verständlich anzeigen
 - ZFS-Pool-Zustand und letzten beziehungsweise laufenden Scrub in einem eigenen Tab anzeigen
 - Scrubs pro Pool manuell starten und laufende Scrubs kontrolliert abbrechen
-- monatlichen Auto-Scrub pro Pool-GUID aktivieren, täglich um 03:00 Uhr auf Fälligkeit prüfen und parallele Scrubs vermeiden
+- monatlichen Auto-Scrub pro Pool-GUID aktivieren und dafür Wochentag sowie Uhrzeit frei festlegen
+- fällige Auto-Scrubs über einen zentralen Dispatcher nacheinander starten und parallele Scrubs vermeiden
 - Daten nach dem Array-Start manuell aktualisieren
 
 Diese Version verändert keine Docker- oder VM-Konfiguration. Samba wird nur für eingerichtete Snapshot-Freigaben ergänzt, normale Unraid-Freigaben bleiben unverändert. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
@@ -68,7 +69,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.9.0-noarch-1.txz`
+- `zfs.snapshot.manager-0.10.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -118,7 +119,7 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 | `/boot/config/plugins/zfs.snapshot.manager/packages/` | heruntergeladenes, geprüftes Plugin-Paket | Ja |
 | `/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg` | Aktivierungszustand | Ja |
 | `/boot/config/plugins/zfs.snapshot.manager/policies.json` | Zeitpläne und Aufbewahrungsdauer | Ja |
-| `/boot/config/plugins/zfs.snapshot.manager/scrubs.json` | Pools mit aktiviertem monatlichem Auto-Scrub | Ja |
+| `/boot/config/plugins/zfs.snapshot.manager/scrubs.json` | Monatliche Auto-Scrub-Zeitpläne über stabile Pool-GUIDs | Ja |
 | `/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cron` | von Unraid eingelesene Cron-Zeitpläne | Ja |
 | `/usr/local/emhttp/plugins/zfs.snapshot.manager/` | WebGUI und Backend | Nein, wird beim Start erneut installiert |
 | `/var/log/zfs.snapshot.manager.log` | Laufzeitprotokoll | Nein |
@@ -137,6 +138,7 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Vor der Bereinigung einer rekursiven Snapshot-Gruppe werden Eigentum, Klone und Holds aller fälligen Mitglieder geprüft.
 - Die nicht destruktive Löschvorschau zeigt nur bereits abgelaufene Snapshots derselben Regel.
 - Cron ruft nur die stabile Regel-ID auf. Dataset und Aufbewahrungsdauer werden bei jedem Lauf erneut aus der serverseitigen Konfiguration gelesen.
+- Ein zentraler Scrub-Dispatcher prüft die gespeicherten Pool-GUIDs, Wochentage und Uhrzeiten und startet höchstens einen fälligen Scrub.
 - Fremde Snapshots verlangen im Backend weiterhin den vollständigen Namen als Bestätigung, die Oberfläche übergibt ihn nach der Sicherheitsabfrage.
 - Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
 - Es existiert kein Rollback-, Clone- oder Mount-Endpunkt.

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.9.0',
+    [string]$Version = '0.10.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,9 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds selectable Monday-to-Sunday maintenance days and start times for each monthly pool scrub
+- Uses one central dispatcher and starts due pools sequentially instead of launching per-pool cron jobs together
+- Keeps Auto-Scrub enabled after a successful save and preserves full pool GUID precision in the browser
 - Adds manual scrub start and stop actions per pool
 - Adds one monthly auto-scrub checkbox per stable pool GUID
 - Checks due pools daily at 03:00 and starts at most one scrub at a time
@@ -193,6 +196,7 @@ rm -f /var/run/zfs.snapshot.manager.shares.lock
 rm -f /var/run/zfs.snapshot.manager.samba.lock
 rm -f /var/run/zfs.snapshot.manager.scrub.lock
 rm -f /var/run/zfs.snapshot.manager.scrubs.lock
+rm -f /var/run/zfs.snapshot.manager.scrub-dispatch.lock
 if [[ -x /usr/local/sbin/update_cron ]]; then
   /usr/local/sbin/update_cron || true
 fi

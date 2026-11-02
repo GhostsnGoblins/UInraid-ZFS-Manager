@@ -14,7 +14,7 @@ const ZSM_SAMBA_CANDIDATE_FILE = '/boot/config/plugins/zfs.snapshot.manager/smb-
 const ZSM_UNRAID_USERS_FILE = '/var/local/emhttp/users.ini';
 const ZSM_UNRAID_SHARES_FILE = '/var/local/emhttp/shares.ini';
 const ZSM_LIBVIRT_SNAPSHOT_DB = '/etc/libvirt/qemu/snapshotdb';
-const ZSM_VERSION = '0.9.0';
+const ZSM_VERSION = '0.10.0';
 const ZSM_SCRUB_INTERVAL_SECONDS = 2592000;
 
 function zsm_is_enabled(): bool
@@ -161,22 +161,50 @@ function zsm_pool_scan_progress(array $pool): string
     return $eta === '' ? $label : $label . ', etwa ' . $eta;
 }
 
-/** @return list<string> */
-function zsm_normalize_auto_scrub_guids(array $values): array
+/**
+ * @param mixed $candidate
+ * @return array{guid:string,weekday:int,hour:int,minute:int}|null
+ */
+function zsm_normalize_scrub_schedule(mixed $candidate): ?array
 {
-    $guids = [];
-    foreach ($values as $value) {
-        if (is_string($value) && zsm_is_valid_pool_guid($value)) {
-            $guids[$value] = true;
-        }
+    if (is_string($candidate)) {
+        return zsm_is_valid_pool_guid($candidate)
+            ? ['guid' => $candidate, 'weekday' => 0, 'hour' => 3, 'minute' => 0]
+            : null;
     }
-    $guids = array_keys($guids);
-    sort($guids, SORT_STRING);
-    return $guids;
+    if (!is_array($candidate)) {
+        return null;
+    }
+
+    $guid = $candidate['guid'] ?? '';
+    $weekday = filter_var($candidate['weekday'] ?? null, FILTER_VALIDATE_INT);
+    $hour = filter_var($candidate['hour'] ?? null, FILTER_VALIDATE_INT);
+    $minute = filter_var($candidate['minute'] ?? null, FILTER_VALIDATE_INT);
+    if (!is_string($guid) || !zsm_is_valid_pool_guid($guid)
+        || $weekday === false || $weekday < 0 || $weekday > 6
+        || $hour === false || $hour < 0 || $hour > 23
+        || $minute === false || $minute < 0 || $minute > 59) {
+        return null;
+    }
+    return ['guid' => $guid, 'weekday' => $weekday, 'hour' => $hour, 'minute' => $minute];
 }
 
-/** @return list<string> */
-function zsm_load_auto_scrub_guids(): array
+/** @return list<array{guid:string,weekday:int,hour:int,minute:int}> */
+function zsm_normalize_scrub_schedules(array $values): array
+{
+    $schedules = [];
+    foreach ($values as $value) {
+        $schedule = zsm_normalize_scrub_schedule($value);
+        if ($schedule !== null) {
+            $schedules[$schedule['guid']] = $schedule;
+        }
+    }
+    ksort($schedules, SORT_STRING);
+    return array_values($schedules);
+}
+
+/** @return list<array{guid:string,weekday:int,hour:int,minute:int}> */
+function zsm_load_scrub_schedules(): array
 {
     $raw = is_file(ZSM_SCRUBS_FILE) ? @file_get_contents(ZSM_SCRUBS_FILE) : false;
     if (!is_string($raw) || $raw === '') {
@@ -184,14 +212,34 @@ function zsm_load_auto_scrub_guids(): array
     }
     $decoded = json_decode($raw, true);
     return is_array($decoded) && array_is_list($decoded)
-        ? zsm_normalize_auto_scrub_guids($decoded)
+        ? zsm_normalize_scrub_schedules($decoded)
         : [];
 }
 
-function zsm_save_auto_scrub_guids(array $guids): bool
+/** @return list<string> */
+function zsm_load_auto_scrub_guids(): array
 {
-    $json = json_encode(zsm_normalize_auto_scrub_guids($guids), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    return array_column(zsm_load_scrub_schedules(), 'guid');
+}
+
+function zsm_save_scrub_schedules(array $schedules): bool
+{
+    $json = json_encode(zsm_normalize_scrub_schedules($schedules), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     return is_string($json) && zsm_atomic_write(ZSM_SCRUBS_FILE, $json . PHP_EOL, 0600);
+}
+
+/**
+ * @param list<array{guid:string,weekday:int,hour:int,minute:int}> $schedules
+ * @return array{guid:string,weekday:int,hour:int,minute:int}|null
+ */
+function zsm_find_scrub_schedule(array $schedules, string $guid): ?array
+{
+    foreach ($schedules as $schedule) {
+        if ($schedule['guid'] === $guid) {
+            return $schedule;
+        }
+    }
+    return null;
 }
 
 /** @param array<string,string> $pool */
@@ -214,22 +262,38 @@ function zsm_scrub_is_due(array $pool, ?int $now = null): bool
 }
 
 /** @param array<string,string> $pool */
-function zsm_next_scrub_check(array $pool, ?DateTimeImmutable $now = null): DateTimeImmutable
+function zsm_scrub_schedule_ready(array $schedule, ?DateTimeImmutable $now = null): bool
 {
     $now ??= new DateTimeImmutable('now');
-    $nextDaily = $now->setTime(3, 0);
-    if ($nextDaily <= $now) {
-        $nextDaily = $nextDaily->modify('+1 day');
-    }
+    return (int) $now->format('w') === $schedule['weekday']
+        && ((int) $now->format('G') * 60 + (int) $now->format('i')) >= ($schedule['hour'] * 60 + $schedule['minute']);
+}
 
+/**
+ * @param array<string,string> $pool
+ * @param array{guid:string,weekday:int,hour:int,minute:int} $schedule
+ */
+function zsm_next_scrub_run(array $pool, array $schedule, ?DateTimeImmutable $now = null): DateTimeImmutable
+{
+    $now ??= new DateTimeImmutable('now');
     $due = zsm_scrub_due_timestamp($pool);
-    if ($due === 0 || $due <= $nextDaily->getTimestamp()) {
-        return $nextDaily;
+    $notBeforeTimestamp = max($now->getTimestamp(), $due);
+    $notBefore = (new DateTimeImmutable('@' . $notBeforeTimestamp))->setTimezone($now->getTimezone());
+    $currentWeekday = (int) $notBefore->format('w');
+    $currentMinutes = (int) $notBefore->format('G') * 60 + (int) $notBefore->format('i');
+    $targetMinutes = $schedule['hour'] * 60 + $schedule['minute'];
+    if ($currentWeekday === $schedule['weekday'] && $currentMinutes >= $targetMinutes) {
+        return $notBefore;
     }
 
-    $dueDate = (new DateTimeImmutable('@' . $due))->setTimezone($now->getTimezone());
-    $eligible = $dueDate->setTime(3, 0);
-    return $eligible->getTimestamp() < $due ? $eligible->modify('+1 day') : $eligible;
+    $daysAhead = ($schedule['weekday'] - $currentWeekday + 7) % 7;
+    $candidate = $notBefore->setTime($schedule['hour'], $schedule['minute'], 0);
+    if ($daysAhead > 0) {
+        $candidate = $candidate->modify('+' . $daysAhead . ' days');
+    } elseif ($candidate < $notBefore) {
+        $candidate = $candidate->modify('+7 days');
+    }
+    return $candidate;
 }
 
 /**
@@ -491,7 +555,7 @@ function zsm_apply_cron(): array
 {
     $lines = ['# Generated by ZFS Snapshot Manager. Do not edit manually.'];
     $policies = zsm_load_policies();
-    $autoScrubGuids = zsm_load_auto_scrub_guids();
+    $scrubSchedules = zsm_load_scrub_schedules();
 
     if (zsm_is_enabled() && $policies !== []) {
         foreach ($policies as $policy) {
@@ -504,8 +568,8 @@ function zsm_apply_cron(): array
         }
         $lines[] = sprintf('*/15 * * * * /usr/bin/php %s cleanup >/dev/null 2>&1', ZSM_POLICY_RUNNER);
     }
-    if (zsm_is_enabled() && $autoScrubGuids !== []) {
-        $lines[] = sprintf('0 3 * * * /usr/bin/php %s >/dev/null 2>&1', ZSM_SCRUB_RUNNER);
+    if (zsm_is_enabled() && $scrubSchedules !== []) {
+        $lines[] = sprintf('* * * * * /usr/bin/php %s >/dev/null 2>&1', ZSM_SCRUB_RUNNER);
     }
 
     if (!zsm_atomic_write(ZSM_CRON_FILE, implode(PHP_EOL, $lines) . PHP_EOL, 0644)) {

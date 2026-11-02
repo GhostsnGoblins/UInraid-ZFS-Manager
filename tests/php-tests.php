@@ -152,7 +152,17 @@ check(zsm_pool_scan_progress($runningPool) === '5.00 %, etwa 00:03:00', 'Fortsch
 check(zsm_pool_scan_label(['scan_type' => 'none', 'scan_state' => 'never']) === 'Noch kein Scrub protokolliert', 'fehlender Scrub wird gemeldet');
 check(zsm_pool_scan_label(['scan_type' => 'resilver', 'scan_state' => 'completed']) === 'Letzter Scan war ein Resilver', 'Resilver wird nicht als Scrub ausgegeben');
 
-check(zsm_normalize_auto_scrub_guids(['22', '1', '22', 'x', 3]) === ['1', '22'], 'Auto-Scrub verwendet eindeutige gültige Pool-GUIDs');
+$scrubSchedules = zsm_normalize_scrub_schedules([
+    '22',
+    ['guid' => '1', 'weekday' => 1, 'hour' => 4, 'minute' => 30],
+    ['guid' => '22', 'weekday' => 2, 'hour' => 5, 'minute' => 45],
+    ['guid' => 'x', 'weekday' => 9, 'hour' => 99, 'minute' => 99],
+]);
+check($scrubSchedules === [
+    ['guid' => '1', 'weekday' => 1, 'hour' => 4, 'minute' => 30],
+    ['guid' => '22', 'weekday' => 2, 'hour' => 5, 'minute' => 45],
+], 'Auto-Scrub verwendet eindeutige gültige Pool-GUIDs und Zeitpläne');
+check(zsm_normalize_scrub_schedule('333') === ['guid' => '333', 'weekday' => 0, 'hour' => 3, 'minute' => 0], 'alte GUID-Liste wird auf Sonntag 03:00 Uhr migriert');
 $scrubNow = 1793592000;
 $recentPool = array_merge($completedPool, ['scan_completed' => (string) ($scrubNow - 86400)]);
 $oldPool = array_merge($completedPool, ['scan_completed' => (string) ($scrubNow - ZSM_SCRUB_INTERVAL_SECONDS)]);
@@ -161,6 +171,10 @@ check(zsm_scrub_is_due($oldPool, $scrubNow), 'Scrub wird nach 30 Tagen fällig')
 check(zsm_scrub_is_due(['scan_type' => 'resilver', 'scan_state' => 'completed'], $scrubNow), 'Resilver ersetzt keinen fälligen Scrub');
 $fixedNow = new DateTimeImmutable('2026-11-02 04:00:00', new DateTimeZone('Europe/Berlin'));
 $neverPool = ['scan_type' => 'none', 'scan_state' => 'never', 'scan_completed' => '0'];
-check(zsm_next_scrub_check($neverPool, $fixedNow)->format('Y-m-d H:i') === '2026-11-03 03:00', 'nie gescrubbter Pool wird beim nächsten Wartungsfenster geprüft');
+$mondaySchedule = ['guid' => '1', 'weekday' => 1, 'hour' => 3, 'minute' => 0];
+$tuesdaySchedule = ['guid' => '1', 'weekday' => 2, 'hour' => 3, 'minute' => 0];
+check(zsm_scrub_schedule_ready($mondaySchedule, $fixedNow), 'Zeitplan ist am gewählten Tag nach der Uhrzeit bereit');
+check(!zsm_scrub_schedule_ready($tuesdaySchedule, $fixedNow), 'Zeitplan startet nicht am falschen Wochentag');
+check(zsm_next_scrub_run($neverPool, $tuesdaySchedule, $fixedNow)->format('Y-m-d H:i') === '2026-11-03 03:00', 'nächster Auto-Scrub folgt Wochentag und Uhrzeit');
 
 echo 'PHP-Tests erfolgreich.' . PHP_EOL;
