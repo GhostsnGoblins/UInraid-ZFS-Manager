@@ -23,7 +23,7 @@ $datasets = $datasetResult['exitCode'] === 0
     ? zsm_parse_tsv($datasetResult['stdout'], ['name', 'type', 'used', 'available', 'referenced', 'mountpoint'])
     : [];
 $snapshots = $snapshotResult['exitCode'] === 0
-    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind', 'owned'])
+    ? zsm_parse_tsv($snapshotResult['stdout'], ['name', 'creation', 'used', 'referenced', 'clones', 'kind', 'owned', 'protected'])
     : [];
 $pools = $poolResult['exitCode'] === 0
     ? zsm_parse_tsv($poolResult['stdout'], ['guid', 'name', 'health', 'scan_type', 'scan_state', 'scan_started', 'scan_completed', 'repaired', 'errors', 'progress', 'eta', 'summary'])
@@ -98,6 +98,8 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 .zsm-policy-form input, .zsm-policy-form select { width:100%; box-sizing:border-box; }
 .zsm-policy-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .zsm-policy-actions button { margin:0; padding:7px 10px; white-space:nowrap; }
+.zsm-snapshot-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.zsm-snapshot-actions button { margin:0; padding:7px 10px; white-space:nowrap; }
 .zsm-policy-actions .zsm-danger { background:#b71c1c !important; border-color:#b71c1c !important; color:#fff !important; }
 .zsm-policy-checkbox input { width:auto; margin-right:6px; }
 .zsm-scrub-auto { display:flex; align-items:flex-start; gap:7px; }
@@ -435,19 +437,20 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
 
 <section class="zsm-panel" data-zsm-panel="overview">
   <h2>Snapshots</h2>
-  <p>Vor dem Löschen erscheint eine Sicherheitsabfrage. Snapshots mit Klonen oder ZFS-Holds werden immer serverseitig abgelehnt.</p>
+  <p>Geschützte Snapshots werden von der automatischen Aufbewahrungsbereinigung übersprungen. Eine Wiederherstellung setzt nur das jeweilige Dataset auf diesen Stand zurück und entfernt nach gesonderter Bestätigung alle neueren Snapshots dieses Datasets. Unter-Datasets werden nicht automatisch zurückgesetzt.</p>
   <div class="zsm-table-wrap">
     <table class="zsm-table">
-      <thead><tr><th data-sort="text">Name</th><th data-sort="number">Erstellt</th><th data-sort="number">Belegt</th><th data-sort="number">Referenziert</th><th data-sort="text">Klone</th><th>Aktion</th></tr></thead>
+      <thead><tr><th data-sort="text">Name</th><th data-sort="number">Erstellt</th><th data-sort="number">Belegt</th><th data-sort="number">Referenziert</th><th data-sort="text">Klone</th><th data-sort="text">Schutz</th><th>Aktion</th></tr></thead>
       <tbody>
       <?php if (!$snapshots && !$arrayStarted): ?>
-        <tr><td colspan="6">Das Array ist noch nicht gestartet.</td></tr>
+        <tr><td colspan="7">Das Array ist noch nicht gestartet.</td></tr>
       <?php elseif (!$snapshots): ?>
-        <tr><td colspan="6">Keine Snapshots gefunden.</td></tr>
+        <tr><td colspan="7">Keine Snapshots gefunden.</td></tr>
       <?php else: ?>
         <?php foreach (array_reverse($snapshots) as $snapshot): ?>
           <?php
           $isPluginSnapshot = $snapshot['owned'] === '1';
+          $isProtected = $snapshot['protected'] === '1';
           $hasClones = $snapshot['clones'] !== '' && $snapshot['clones'] !== '-';
           ?>
           <tr>
@@ -456,18 +459,26 @@ $arrayStateLabel = $arrayStateLabels[$arrayState] ?? $arrayState;
             <td data-sort-value="<?=zsm_h($snapshot['used'])?>"><?=zsm_h(zsm_format_bytes($snapshot['used']))?></td>
             <td data-sort-value="<?=zsm_h($snapshot['referenced'])?>"><?=zsm_h(zsm_format_bytes($snapshot['referenced']))?></td>
             <td><?=zsm_h($snapshot['clones'])?></td>
-            <td>
-              <?php if ($hasClones): ?>
-                <span class="zsm-muted">Klone vorhanden</span>
-              <?php else: ?>
+            <td data-sort-value="<?=$isProtected ? '1' : '0'?>"><?=$isProtected ? '<span class="zsm-state-ok">Geschützt</span>' : '<span class="zsm-muted">Automatisch</span>'?></td>
+            <td><div class="zsm-snapshot-actions">
+              <button
+                type="button"
+                class="zsm-protection-button"
+                data-snapshot="<?=zsm_h($snapshot['name'])?>"
+                data-protected="<?=$isProtected ? '1' : '0'?>"
+              ><?=$isProtected ? 'Schutz aufheben' : 'Schützen'?></button>
+              <button type="button" class="zsm-restore-button" data-snapshot="<?=zsm_h($snapshot['name'])?>">Wiederherstellen</button>
+              <?php if (!$hasClones): ?>
                 <button
                   type="button"
                   class="zsm-delete-button zsm-danger"
                   data-snapshot="<?=zsm_h($snapshot['name'])?>"
                   data-external="<?=$isPluginSnapshot ? '0' : '1'?>"
                 ><?=$isPluginSnapshot ? 'Löschen' : 'Extern löschen'?></button>
+              <?php else: ?>
+                <span class="zsm-muted">Löschen: Klone vorhanden</span>
               <?php endif; ?>
-            </td>
+            </div></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -962,6 +973,68 @@ $(function () {
       var response = xhr.responseJSON || {};
       message.addClass('zsm-error').text(response.message || 'Der Snapshot konnte nicht gelöscht werden.').show();
       button.prop('disabled', false).text(originalLabel);
+    });
+  });
+
+  $('.zsm-protection-button').on('click', function () {
+    var button = $(this);
+    var snapshot = String(button.attr('data-snapshot') || '');
+    var isProtected = String(button.attr('data-protected') || '') === '1';
+    var action = isProtected ? 'unprotect' : 'protect';
+    var message = $('#zsm-message');
+    var originalLabel = button.text();
+    if (isProtected && !window.confirm('Schutz vor automatischer Löschung wirklich aufheben?\n\n' + snapshot)) {
+      return;
+    }
+    message.hide().removeClass('zsm-error zsm-success');
+    button.prop('disabled', true).text(isProtected ? 'Wird freigegeben...' : 'Wird geschützt...');
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/action.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: action,
+        snapshot: snapshot
+      }
+    }).done(function (response) {
+      message.addClass('zsm-success').text(response.message).show();
+      window.setTimeout(function () { window.location.reload(); }, 700);
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      message.addClass('zsm-error').text(response.message || 'Der Schutzstatus konnte nicht geändert werden.').show();
+      button.prop('disabled', false).text(originalLabel);
+    });
+  });
+
+  $('.zsm-restore-button').on('click', function () {
+    var button = $(this);
+    var snapshot = String(button.attr('data-snapshot') || '');
+    var message = $('#zsm-message');
+    var warning = 'Dataset wirklich auf diesen Snapshot zurücksetzen?\n\n' + snapshot
+      + '\n\nAlle Änderungen seit diesem Stand und alle neueren Snapshots desselben Datasets werden dauerhaft entfernt. Unter-Datasets werden nicht zurückgesetzt. Geschützte neuere Snapshots, Bookmarks, Klone oder ZFS-Holds blockieren die Wiederherstellung.';
+    if (!window.confirm(warning)) {
+      return;
+    }
+    message.hide().removeClass('zsm-error zsm-success');
+    button.prop('disabled', true).text('Wird wiederhergestellt...');
+    $.ajax({
+      url: '/plugins/zfs.snapshot.manager/include/action.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        csrf_token: <?=json_encode($csrfToken, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
+        action: 'restore',
+        snapshot: snapshot,
+        confirmation: snapshot
+      }
+    }).done(function (response) {
+      message.addClass('zsm-success').text(response.message + ' ' + response.snapshot).show();
+      window.setTimeout(function () { window.location.reload(); }, 1200);
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      message.addClass('zsm-error').text(response.message || 'Das Dataset konnte nicht wiederhergestellt werden.').show();
+      button.prop('disabled', false).text('Wiederherstellen');
     });
   });
 });

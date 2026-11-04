@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- Snapshots über die Tabelle vor der automatischen Aufbewahrungsbereinigung schützen und wieder freigeben
+- Schutzstatus als lokale ZFS-Benutzereigenschaft dauerhaft am Snapshot speichern
+- geschützte automatische Snapshots aus Löschvorschau und Bereinigung ausschließen
+- Dataset über einen Wiederherstellungsbutton auf einen ausgewählten Snapshot zurücksetzen
+- neuere Snapshots vor dem Rollback vollständig auf Schutzstatus, Klone und ZFS-Holds prüfen sowie bei neueren Bookmarks abbrechen
+- Wiederherstellung mit neueren geschützten oder abhängigen Snapshots kontrolliert blockieren
+
 ## 0.9.2
 
 - Auto-Scrub-Zeitangaben wie `03:00` mit führenden Nullen korrekt validieren

@@ -11,6 +11,7 @@ readonly SCRUB_LOCK_FILE="${ZSM_SCRUB_LOCK_FILE:-/var/run/${PLUGIN_NAME}.scrub.l
 readonly UPDATE_CRON_BIN="${ZSM_UPDATE_CRON_BIN:-/usr/local/sbin/update_cron}"
 readonly SNAPSHOT_KIND_PROPERTY="org.unraidzfsmanager:kind"
 readonly SNAPSHOT_POLICY_PROPERTY="org.unraidzfsmanager:policy"
+readonly SNAPSHOT_PROTECTED_PROPERTY="org.unraidzfsmanager:protected"
 readonly SAMBA_LOCK_FILE="${ZSM_SAMBA_LOCK_FILE:-/var/run/${PLUGIN_NAME}.samba.lock}"
 readonly SAMBA_CONFIG_DIR="${ZSM_SAMBA_CONFIG_DIR:-/boot/config/plugins/${PLUGIN_NAME}}"
 readonly SAMBA_ACTIVE_CONFIG="${SAMBA_CONFIG_DIR}/smb-snapshots.conf"
@@ -318,14 +319,15 @@ plugin_snapshot_metadata_matches() {
 list_snapshots() {
   local zfs_bin="$1"
   local property_rows snapshot_rows name property value source
-  local creation used referenced clones owned
+  local creation used referenced clones owned protected
   declare -A kind_values=()
   declare -A kind_sources=()
   declare -A policy_values=()
   declare -A policy_sources=()
+  declare -A protected_values=()
 
   property_rows="$("$zfs_bin" get -H -p -t snapshot -o name,property,value,source \
-    "${SNAPSHOT_KIND_PROPERTY},${SNAPSHOT_POLICY_PROPERTY}" 2>/dev/null)" || property_rows=""
+    "${SNAPSHOT_KIND_PROPERTY},${SNAPSHOT_POLICY_PROPERTY},${SNAPSHOT_PROTECTED_PROPERTY}" 2>/dev/null)" || property_rows=""
   while IFS=$'\t' read -r name property value source; do
     [[ -n "$name" ]] || continue
     case "$property" in
@@ -337,6 +339,9 @@ list_snapshots() {
         policy_values["$name"]="$value"
         policy_sources["$name"]="$source"
         ;;
+      "$SNAPSHOT_PROTECTED_PROPERTY")
+        protected_values["$name"]="$value"
+        ;;
     esac
   done <<< "$property_rows"
 
@@ -345,14 +350,16 @@ list_snapshots() {
   while IFS=$'\t' read -r name creation used referenced clones; do
     [[ -n "$name" ]] || continue
     owned=0
+    protected=0
     if plugin_snapshot_metadata_matches "$name" \
         "${kind_values[$name]-}" "${kind_sources[$name]-}" \
         "${policy_values[$name]-}" "${policy_sources[$name]-}"; then
       owned=1
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    [[ "${protected_values[$name]-}" == "on" ]] && protected=1
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$name" "$creation" "$used" "$referenced" "$clones" \
-      "${kind_values[$name]--}" "$owned"
+      "${kind_values[$name]--}" "$owned" "$protected"
   done <<< "$snapshot_rows"
 }
 
@@ -522,10 +529,11 @@ require_snapshot_exists() {
   local zfs_bin="$1"
   local snapshot="$2"
   local mode="$3"
+  local action="${4:-delete}"
   local existing
   if ! existing="$("$zfs_bin" list -H -t snapshot -o name "$snapshot" 2>/dev/null)" \
       || [[ "$existing" != "$snapshot" ]]; then
-    write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=not_found"
+    write_log "action=${action} mode=${mode} snapshot=${snapshot} result=blocked reason=not_found"
     fail "Der Snapshot existiert nicht oder ist nicht zugänglich." 66
   fi
 }
@@ -534,21 +542,22 @@ require_no_snapshot_dependencies() {
   local zfs_bin="$1"
   local snapshot="$2"
   local mode="$3"
+  local action="${4:-delete}"
   local clones holds
   if ! clones="$("$zfs_bin" get -H -o value clones "$snapshot" 2>/dev/null)"; then
-    write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=clone_check_failed"
+    write_log "action=${action} mode=${mode} snapshot=${snapshot} result=blocked reason=clone_check_failed"
     fail "Abhängige Klone konnten nicht sicher geprüft werden." 78
   fi
   if [[ -n "$clones" && "$clones" != "-" ]]; then
-    write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=clones_present"
+    write_log "action=${action} mode=${mode} snapshot=${snapshot} result=blocked reason=clones_present"
     fail "Der Snapshot besitzt abhängige Klone und wurde nicht gelöscht." 78
   fi
   if ! holds="$("$zfs_bin" holds -H "$snapshot" 2>/dev/null)"; then
-    write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=hold_check_failed"
+    write_log "action=${action} mode=${mode} snapshot=${snapshot} result=blocked reason=hold_check_failed"
     fail "ZFS-Holds konnten nicht sicher geprüft werden." 79
   fi
   if [[ -n "$holds" ]]; then
-    write_log "action=delete mode=${mode} snapshot=${snapshot} result=blocked reason=holds_present"
+    write_log "action=${action} mode=${mode} snapshot=${snapshot} result=blocked reason=holds_present"
     fail "Der Snapshot besitzt ZFS-Holds und wurde nicht gelöscht." 79
   fi
 }
@@ -613,23 +622,107 @@ delete_external_snapshot() {
   destroy_checked_snapshot "$zfs_bin" "$snapshot" "external"
 }
 
+set_snapshot_protection() {
+  local zfs_bin="$1"
+  local snapshot="$2"
+  local protected="$3"
+  is_valid_snapshot "$snapshot" || fail "Ungültiger Snapshot-Name." 64
+  [[ "$protected" == "on" || "$protected" == "off" ]] \
+    || fail "Ungültiger Schutzstatus." 64
+  lock_snapshot_action
+  require_snapshot_exists "$zfs_bin" "$snapshot" "snapshot" "protection"
+  if ! "$zfs_bin" set "${SNAPSHOT_PROTECTED_PROPERTY}=${protected}" "$snapshot"; then
+    write_log "action=protection snapshot=${snapshot} protected=${protected} result=failed"
+    fail "Der Schutzstatus konnte nicht gespeichert werden." 74
+  fi
+  write_log "action=protection snapshot=${snapshot} protected=${protected} result=success"
+  printf '%s\n' "$snapshot"
+}
+
+newer_dataset_snapshots() {
+  local zfs_bin="$1"
+  local snapshot="$2"
+  local dataset snapshot_rows name createtxg base found
+  dataset="${snapshot%@*}"
+  found=0
+  snapshot_rows="$("$zfs_bin" list -H -p -t snapshot,bookmark -o name,createtxg -s createtxg -r "$dataset" 2>/dev/null)" \
+    || fail "Neuere Snapshots und Bookmarks konnten nicht sicher ermittelt werden." 74
+  while IFS=$'\t' read -r name createtxg; do
+    if [[ "$name" == *@* ]]; then
+      base="${name%@*}"
+    elif [[ "$name" == *#* ]]; then
+      base="${name%#*}"
+    else
+      continue
+    fi
+    [[ "$base" == "$dataset" ]] || continue
+    if [[ "$name" == "$snapshot" ]]; then
+      found=1
+      continue
+    fi
+    if (( found == 1 )) && [[ "$name" == *#* ]]; then
+      fail "Ein neueres ZFS-Bookmark verhindert die sichere Wiederherstellung: ${name}" 79
+    fi
+    (( found == 1 )) && printf '%s\n' "$name"
+  done <<< "$snapshot_rows"
+  (( found == 1 )) || fail "Der Snapshot wurde in der sortierten Snapshot-Liste nicht gefunden." 74
+}
+
+restore_snapshot() {
+  local zfs_bin="$1"
+  local snapshot="$2"
+  local confirmation="$3"
+  local name protected newer_rows
+  local -a newer_snapshots=()
+  local -a rollback_arguments=(rollback)
+  is_valid_snapshot "$snapshot" || fail "Ungültiger Snapshot-Name." 64
+  [[ "$confirmation" == "$snapshot" ]] \
+    || fail "Der bestätigte Snapshot-Name stimmt nicht exakt überein." 64
+  lock_snapshot_action
+  require_snapshot_exists "$zfs_bin" "$snapshot" "snapshot" "restore"
+  newer_rows="$(newer_dataset_snapshots "$zfs_bin" "$snapshot")" || return $?
+  [[ -n "$newer_rows" ]] && mapfile -t newer_snapshots <<< "$newer_rows"
+
+  for name in "${newer_snapshots[@]}"; do
+    if ! protected="$("$zfs_bin" get -H -o value "$SNAPSHOT_PROTECTED_PROPERTY" "$name" 2>/dev/null)"; then
+      write_log "action=restore snapshot=${snapshot} result=blocked reason=protection_check_failed newer=${name}"
+      fail "Der Schutzstatus eines neueren Snapshots konnte nicht geprüft werden." 74
+    fi
+    if [[ "$protected" == "on" ]]; then
+      write_log "action=restore snapshot=${snapshot} result=blocked reason=newer_snapshot_protected newer=${name}"
+      fail "Ein neuerer geschützter Snapshot verhindert die Wiederherstellung: ${name}" 79
+    fi
+    require_no_snapshot_dependencies "$zfs_bin" "$name" "newer-snapshot" "restore"
+  done
+
+  (( ${#newer_snapshots[@]} > 0 )) && rollback_arguments+=(-r)
+  rollback_arguments+=("$snapshot")
+  if ! "$zfs_bin" "${rollback_arguments[@]}"; then
+    write_log "action=restore snapshot=${snapshot} newer=${#newer_snapshots[@]} result=failed reason=zfs_rollback_failed"
+    fail "ZFS konnte das Dataset nicht auf den Snapshot zurücksetzen." 74
+  fi
+  write_log "action=restore snapshot=${snapshot} newer=${#newer_snapshots[@]} result=success"
+  printf '%s\n' "$snapshot"
+}
+
 list_owned_policy_snapshots() {
   local zfs_bin="$1"
   local policy_id="$2"
   local dataset="$3"
-  local name creation kind policy snapshot_name ownership policy_ownership
+  local name creation kind policy protected snapshot_name ownership policy_ownership
 
-  while IFS=$'\t' read -r name creation kind policy; do
+  while IFS=$'\t' read -r name creation kind policy protected; do
     [[ "${name%@*}" == "$dataset" || "${name%@*}" == "$dataset/"* ]] || continue
     snapshot_name="${name##*@}"
     [[ "$snapshot_name" =~ ^uzm_auto_${policy_id}_[0-9]{8}T[0-9]{6}Z$ ]] || continue
     [[ "$kind" == "automatic" && "$policy" == "$policy_id" ]] || continue
+    [[ "$protected" == "on" ]] && continue
     ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_KIND_PROPERTY" "$name" 2>/dev/null)" || continue
     policy_ownership="$("$zfs_bin" get -H -o value,source "$SNAPSHOT_POLICY_PROPERTY" "$name" 2>/dev/null)" || continue
     [[ "$ownership" == $'automatic\tlocal' && "$policy_ownership" == "${policy_id}"$'\tlocal' ]] || continue
     printf '%s\t%s\n' "$name" "$creation"
   done < <("$zfs_bin" list -H -p -t snapshot \
-    -o name,creation,"$SNAPSHOT_KIND_PROPERTY","$SNAPSHOT_POLICY_PROPERTY" -s creation)
+    -o name,creation,"$SNAPSHOT_KIND_PROPERTY","$SNAPSHOT_POLICY_PROPERTY","$SNAPSHOT_PROTECTED_PROPERTY" -s creation)
 }
 
 preview_policy() {
@@ -793,6 +886,18 @@ main() {
     delete-external)
       [[ $# -eq 3 ]] || fail "Aufruf: zfs-manager delete-external SNAPSHOT BESTÄTIGUNG" 64
       delete_external_snapshot "$zfs_bin" "$2" "$3"
+      ;;
+    protect)
+      [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager protect SNAPSHOT" 64
+      set_snapshot_protection "$zfs_bin" "$2" "on"
+      ;;
+    unprotect)
+      [[ $# -eq 2 ]] || fail "Aufruf: zfs-manager unprotect SNAPSHOT" 64
+      set_snapshot_protection "$zfs_bin" "$2" "off"
+      ;;
+    restore)
+      [[ $# -eq 3 ]] || fail "Aufruf: zfs-manager restore SNAPSHOT BESTÄTIGUNG" 64
+      restore_snapshot "$zfs_bin" "$2" "$3"
       ;;
     run-policy)
       [[ $# -eq 5 ]] || fail "Aufruf: zfs-manager run-policy ID DATASET SEKUNDEN REKURSIV" 64

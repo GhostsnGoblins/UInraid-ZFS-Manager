@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.9.2',
+    [string]$Version = '0.10.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -81,6 +81,8 @@ $manifest = @"
 <CHANGES><![CDATA[
 ### $Version
 
+- Adds a per-snapshot protection marker that excludes protected automatic snapshots from retention cleanup
+- Adds a confirmed dataset restore button with preflight checks for protected newer snapshots, clones, and holds
 - Adds selectable Monday-to-Sunday maintenance days and start times for each monthly pool scrub
 - Uses one central dispatcher and starts due pools sequentially instead of launching per-pool cron jobs together
 - Keeps Auto-Scrub enabled after a successful save and preserves full pool GUID precision in the browser

@@ -2,12 +2,14 @@
 
 Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins.
 
-## Funktionsumfang 0.9.2
+## Funktionsumfang 0.10.0
 
 - eigener Hauptreiter `Snapshots` neben Docker und VMs
 - Ein/Aus-Schalter unter `Settings > User Utilities > ZFS Snapshot Manager`
 - ZFS-Dateisysteme und ZVOLs auflisten
 - vorhandene ZFS-Snapshots auflisten
+- Snapshots dauerhaft markieren und dadurch von der automatischen Bereinigung ausnehmen
+- ein Dataset über einen bestätigten Wiederherstellungsbutton auf einen Snapshot zurücksetzen
 - einen manuellen Snapshot für ein ausgewähltes Dataset erstellen
 - pro Dataset einen automatischen Zeitplan einrichten
 - Unter-Datasets optional rekursiv in dieselbe Regel einbeziehen
@@ -29,13 +31,15 @@ Dies ist eine kleine, bewusst begrenzte Testversion eines nativen Unraid-Plugins
 - fällige Auto-Scrubs über einen zentralen Dispatcher nacheinander starten und parallele Scrubs vermeiden
 - Daten nach dem Array-Start manuell aktualisieren
 
-Diese Version verändert keine Docker- oder VM-Konfiguration. Samba wird nur für eingerichtete Snapshot-Freigaben ergänzt, normale Unraid-Freigaben bleiben unverändert. Das Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen.
+Diese Version verändert keine Docker- oder VM-Konfiguration. Samba wird nur für eingerichtete Snapshot-Freigaben ergänzt, normale Unraid-Freigaben bleiben unverändert. Das normale Löschen verwendet keine rekursiven, erzwungenen oder verzögerten ZFS-Optionen. Eine ausdrücklich bestätigte Dataset-Wiederherstellung verwendet bei Bedarf `zfs rollback -r` und entfernt dadurch alle neueren Snapshots desselben Datasets. Neuere geschützte Snapshots, ZFS-Bookmarks, Klone oder ZFS-Holds blockieren den Rollback. Unter-Datasets werden nicht automatisch mit zurückgesetzt und müssen bei Bedarf über ihren eigenen Snapshot wiederhergestellt werden.
 
 Für die Ablaufberechnung entspricht ein Monat genau 30 Tagen. Änderungen an Rhythmus und Aufbewahrung behalten die stabile ID der Regel bei. Dadurch bleiben bereits erstellte automatische Snapshots derselben Regel zugeordnet.
 
 Beim Ausschalten verschwindet der Hauptreiter nach dem Neuladen der WebGUI. Das Backend verweigert dann neue Snapshot-Aktionen. Bereits vorhandene ZFS-Snapshots werden weder gelöscht noch verändert.
 
 Manuelle Snapshots erhalten einen Namen wie `uzm_manual_20261101T120000Z` sowie die ZFS-Benutzereigenschaft `org.unraidzfsmanager:kind=manual`. Automatische Snapshots enthalten zusätzlich die stabile ID ihrer Regel im Namen und in `org.unraidzfsmanager:policy`. Die automatische Bereinigung verlangt alle Kennzeichen in exakter Übereinstimmung. Manuelle und fremde Snapshots werden nicht erfasst.
+
+Ein gesetzter Schutz wird als `org.unraidzfsmanager:protected=on` direkt am Snapshot gespeichert. Die Löschvorschau und die automatische Bereinigung überspringen so markierte Snapshots. Nach dem Aufheben des Schutzes steht die Eigenschaft auf `off` und der Snapshot unterliegt wieder der normalen Aufbewahrungsregel.
 
 ## Snapshot-Freigaben
 
@@ -69,7 +73,7 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.9.2-noarch-1.txz`
+- `zfs.snapshot.manager-0.10.0-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
 
 ## Auf einem Testsystem installieren
@@ -135,13 +139,14 @@ Das Plugin kann in der Unraid-WebGUI unter `Plugins` entfernt werden. Dabei werd
 - Der Aktivierungszustand wird serverseitig geprüft. Ein ausgeblendeter Reiter allein gilt nicht als Schutz.
 - Eigene Plugin-Snapshots werden über Namensschema und lokal gesetzte Plugin-Eigenschaft erkannt.
 - Automatische Löschungen verlangen zusätzlich die exakte stabile Regel-ID im Namen und in einer zweiten lokal gesetzten ZFS-Eigenschaft.
+- Geschützte automatische Snapshots werden bereits bei der Löschvorschau und erneut bei der Bereinigung ausgeschlossen.
 - Vor der Bereinigung einer rekursiven Snapshot-Gruppe werden Eigentum, Klone und Holds aller fälligen Mitglieder geprüft.
 - Die nicht destruktive Löschvorschau zeigt nur bereits abgelaufene Snapshots derselben Regel.
 - Cron ruft nur die stabile Regel-ID auf. Dataset und Aufbewahrungsdauer werden bei jedem Lauf erneut aus der serverseitigen Konfiguration gelesen.
 - Ein zentraler Scrub-Dispatcher prüft die gespeicherten Pool-GUIDs, Wochentage und Uhrzeiten und startet höchstens einen fälligen Scrub.
 - Fremde Snapshots verlangen im Backend weiterhin den vollständigen Namen als Bestätigung, die Oberfläche übergibt ihn nach der Sicherheitsabfrage.
 - Vor dem Löschen werden abhängige Klone und ZFS-Holds geprüft.
-- Es existiert kein Rollback-, Clone- oder Mount-Endpunkt.
+- Dataset-Rollbacks verlangen den exakten Snapshot-Namen als Bestätigung, prüfen alle neueren Snapshots auf Schutzstatus, Klone und Holds und brechen bei neueren Bookmarks ab. Clone- und Mount-Endpunkte existieren nicht.
 
 ## Noch offen
 

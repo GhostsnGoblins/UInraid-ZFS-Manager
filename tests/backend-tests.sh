@@ -24,6 +24,14 @@ if [[ "${1:-}" == "snapshot" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "set" ]]; then
+  exit 0
+fi
+
+if [[ "${1:-}" == "rollback" ]]; then
+  exit 0
+fi
+
 if [[ "${1:-}" == "destroy" ]]; then
   [[ "$target" == 'tank/data@uzm_manual_20250105T000000Z' ]] && exit 1
   exit 0
@@ -36,8 +44,22 @@ if [[ "${1:-}" == "get" && "$*" == *"-t snapshot"* ]]; then
   printf 'tank/data@uzm_manual_20250102T000000Z\torg.unraidzfsmanager:policy\t-\t-\n'
   printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\torg.unraidzfsmanager:kind\tautomatic\tlocal\n'
   printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\torg.unraidzfsmanager:policy\t0123456789abcdef0123456789abcdef\tlocal\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\torg.unraidzfsmanager:protected\toff\tlocal\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\torg.unraidzfsmanager:kind\tautomatic\tlocal\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\torg.unraidzfsmanager:policy\t0123456789abcdef0123456789abcdef\tlocal\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\torg.unraidzfsmanager:protected\ton\tlocal\n'
   printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\torg.unraidzfsmanager:kind\tautomatic\tlocal\n'
   printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\torg.unraidzfsmanager:policy\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\treceived\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "get" && "$*" == *"org.unraidzfsmanager:protected"* ]]; then
+  if [[ "$target" == 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z' \
+      || "$target" == 'tank/safe@keep' ]]; then
+    printf 'on\n'
+  else
+    printf 'off\n'
+  fi
   exit 0
 fi
 
@@ -81,7 +103,7 @@ fi
 
 if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* && "$*" == *"-o name "* ]]; then
   case "$target" in
-    tank/data@uzm_manual_2025010[1-5]T000000Z|tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z|tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|media@auto-2026-10-10_00-00)
+    tank/data@uzm_manual_2025010[1-5]T000000Z|tank/data@uzm_auto_0123456789abcdef0123456789abcdef_2025010[1-2]T000000Z|tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z|media@auto-2026-10-10_00-00|tank/restore@old|tank/restore@new|tank/safe@old|tank/safe@keep)
       printf '%s\n' "$target"
       exit 0
       ;;
@@ -90,12 +112,13 @@ if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* && "$*" == *"-o name "* ]]; 
 fi
 
 if [[ "${1:-}" == "list" && "$*" == *"org.unraidzfsmanager:policy"* ]]; then
-  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735689600\tautomatic\t0123456789abcdef0123456789abcdef\n'
-  printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\tmanual\t-\n'
-  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735689600\tautomatic\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
-  printf 'tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\n'
-  printf 'tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\n'
-  printf 'media@auto-2026-10-10_00-00\t1735689600\t-\t-\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735689600\tautomatic\t0123456789abcdef0123456789abcdef\toff\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\t1735776000\tautomatic\t0123456789abcdef0123456789abcdef\ton\n'
+  printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\tmanual\t-\toff\n'
+  printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735689600\tautomatic\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\toff\n'
+  printf 'tank/data@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\toff\n'
+  printf 'tank/data/child@uzm_auto_cccccccccccccccccccccccccccccccc_20250101T000000Z\t1735689600\tautomatic\tcccccccccccccccccccccccccccccccc\toff\n'
+  printf 'media@auto-2026-10-10_00-00\t1735689600\t-\t-\toff\n'
   exit 0
 fi
 
@@ -103,7 +126,12 @@ if [[ "${1:-}" == "list" && "$*" == *"-t snapshot"* ]]; then
   printf 'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\n'
   printf 'tank/data@uzm_manual_20250102T000000Z\t1735776000\t2048\t512\t-\n'
   printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735862400\t1024\t256\t-\n'
+  printf 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\t1735948700\t1024\t256\t-\n'
   printf 'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735948800\t512\t128\t-\n'
+  printf 'tank/restore@old\t1736000000\t0\t0\t-\n'
+  printf 'tank/restore@new\t1736000100\t0\t0\t-\n'
+  printf 'tank/safe@old\t1736000000\t0\t0\t-\n'
+  printf 'tank/safe@keep\t1736000100\t0\t0\t-\n'
   exit 0
 fi
 
@@ -233,6 +261,7 @@ snapshot_output="$("$backend" list-snapshots)"
 [[ "$snapshot_output" == *$'tank/data@uzm_manual_20250101T000000Z\t1735689600\t4096\t1024\t-\tmanual\t1'* ]]
 [[ "$snapshot_output" == *$'tank/data@uzm_manual_20250102T000000Z\t1735776000\t2048\t512\t-\tmanual\t0'* ]]
 [[ "$snapshot_output" == *$'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z\t1735862400\t1024\t256\t-\tautomatic\t1'* ]]
+[[ "$snapshot_output" == *$'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z\t1735948700\t1024\t256\t-\tautomatic\t1\t1'* ]]
 [[ "$snapshot_output" == *$'tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z\t1735948800\t512\t128\t-\tautomatic\t0'* ]]
 
 pool_output="$("$backend" list-pools)"
@@ -367,8 +396,31 @@ deleted_external="$("$backend" delete-external "$external_snapshot" "$external_s
 grep -Fq 'destroy media@auto-2026-10-10_00-00' "$mock_log"
 grep -Fq 'action=delete mode=external snapshot=media@auto-2026-10-10_00-00 result=success' "$test_root/plugin.log"
 
+protected_snapshot="$("$backend" protect "$external_snapshot")"
+[[ "$protected_snapshot" == "$external_snapshot" ]]
+grep -Fq 'set org.unraidzfsmanager:protected=on media@auto-2026-10-10_00-00' "$mock_log"
+grep -Fq 'action=protection snapshot=media@auto-2026-10-10_00-00 protected=on result=success' "$test_root/plugin.log"
+
+unprotected_snapshot="$("$backend" unprotect "$external_snapshot")"
+[[ "$unprotected_snapshot" == "$external_snapshot" ]]
+grep -Fq 'set org.unraidzfsmanager:protected=off media@auto-2026-10-10_00-00' "$mock_log"
+
+set +e
+blocked_restore_output="$("$backend" restore 'tank/safe@old' 'tank/safe@old' 2>&1)"
+blocked_restore_status=$?
+set -e
+[[ $blocked_restore_status -eq 79 ]]
+[[ "$blocked_restore_output" == *"neuerer geschützter Snapshot"* ]]
+! grep -Fq 'rollback -r tank/safe@old' "$mock_log"
+
+restored_snapshot="$("$backend" restore 'tank/restore@old' 'tank/restore@old')"
+[[ "$restored_snapshot" == 'tank/restore@old' ]]
+grep -Fq 'rollback -r tank/restore@old' "$mock_log"
+grep -Fq 'action=restore snapshot=tank/restore@old newer=1 result=success' "$test_root/plugin.log"
+
 preview_output="$("$backend" preview-policy "$policy_id" 'tank/data' '3600')"
 [[ "$preview_output" == 'tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' ]]
+[[ "$preview_output" != *'20250102T000000Z'* ]]
 ! grep -Fq 'destroy tank/data@uzm_manual_20250101T000000Z' "$mock_log" || true
 
 policy_output="$("$backend" run-policy "$policy_id" 'tank/data' '3600' '0')"
@@ -377,6 +429,7 @@ policy_snapshot="$(printf '%s\n' "$policy_output" | head -n 1)"
 grep -Fxq -- '-w 60 9' "$flock_log"
 grep -Fq 'snapshot -o org.unraidzfsmanager:kind=automatic -o org.unraidzfsmanager:policy=0123456789abcdef0123456789abcdef tank/data@uzm_auto_' "$mock_log"
 grep -Fq 'destroy tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z' "$mock_log"
+! grep -Fq 'destroy tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250102T000000Z' "$mock_log"
 ! grep -Fq 'destroy tank/data@uzm_auto_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_20250101T000000Z' "$mock_log"
 grep -Fq 'action=create mode=automatic policy=0123456789abcdef0123456789abcdef dataset=tank/data' "$test_root/plugin.log"
 grep -Fq 'action=delete mode=retention snapshot=tank/data@uzm_auto_0123456789abcdef0123456789abcdef_20250101T000000Z result=success' "$test_root/plugin.log"

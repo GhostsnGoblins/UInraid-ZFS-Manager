@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.9.2-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.10.0-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -31,8 +31,8 @@ if ($packages.Count -ne 1) {
 }
 
 $library = Get-Content -Raw -LiteralPath $libraryPath
-if ($library -notmatch "const ZSM_VERSION = '0.9.2';") {
-    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.9.2.'
+if ($library -notmatch "const ZSM_VERSION = '0.10.0';") {
+    throw 'Die in der WebGUI sichtbare Plugin-Version ist nicht 0.10.0.'
 }
 if ($library -notmatch 'function zsm_is_enabled') {
     throw 'Die Bibliothek enthält keine zentrale Aktivierungsprüfung.'
@@ -58,8 +58,8 @@ if ($backend -notmatch 'flock -n') {
 if ($backend -notmatch '"\$zfs_bin" destroy "\$snapshot"') {
     throw 'Backend enthält keinen klar begrenzten Snapshot-Löschaufruf.'
 }
-if ($backend -match 'destroy\s+-[A-Za-z]*[rRf]' -or $backend -match 'zfs rollback|zfs clone') {
-    throw 'Backend enthält eine rekursive, erzwungene oder anderweitig unerlaubte ZFS-Aktion.'
+if ($backend -match 'destroy\s+-[A-Za-z]*[rRf]' -or $backend -match 'rollback\s+-R|zfs clone') {
+    throw 'Backend enthält eine rekursive Löschung, einen klonzerstörenden Rollback oder eine unerlaubte Clone-Aktion.'
 }
 if ($backend -notmatch 'value,source' -or
     -not $backend.Contains('plugin_snapshot_metadata_matches') -or
@@ -76,6 +76,15 @@ if ($backend -notmatch 'org\.unraidzfsmanager:kind') {
 }
 if ($backend -notmatch 'org\.unraidzfsmanager:policy' -or $backend -notmatch 'cleanup-policy' -or $backend -notmatch 'preview-policy') {
     throw 'Backend enthält keine regelgebundene automatische Aufbewahrung.'
+}
+if ($backend -notmatch 'org\.unraidzfsmanager:protected' -or $backend -notmatch 'set_snapshot_protection' -or
+    $backend -notmatch '\[\[ "\$protected" == "on" \]\] && continue') {
+    throw 'Snapshot-Schutz oder Ausschluss geschützter Snapshots aus der Aufbewahrungsbereinigung fehlt.'
+}
+if ($backend -notmatch 'restore_snapshot' -or $backend -notmatch 'rollback_arguments\+=\(-r\)' -or
+    $backend -notmatch 'newer_snapshot_protected' -or $backend -notmatch 'require_no_snapshot_dependencies.*"restore"' -or
+    $backend -notmatch 'snapshot,bookmark' -or $backend -notmatch 'neueres ZFS-Bookmark') {
+    throw 'Sicherer Dataset-Rollback mit Vorprüfung neuerer Snapshots fehlt.'
 }
 if ($backend -notmatch 'refresh_cron' -or $backend -notmatch 'UPDATE_CRON_BIN') {
     throw 'Backend enthält keinen festen Unraid-update_cron-Aufruf.'
@@ -110,6 +119,11 @@ if ($action -notmatch "\['delete', \`$snapshot\]") {
 if ($action -notmatch "\['delete-external', \`$snapshot, \`$confirmation\]") {
     throw 'PHP-Endpunkt übergibt die externe Löschbestätigung nicht als festen Argumentvektor.'
 }
+if ($action -notmatch "\['restore', \`$snapshot, \`$confirmation\]" -or
+    $action -notmatch "'protect', 'unprotect', 'restore'" -or
+    $action -notmatch "\`$action === 'restore' \? 300 : 30") {
+    throw 'PHP-Endpunkt enthält keine festen Schutz- und Wiederherstellungsaktionen.'
+}
 if ($action -notmatch 'hash_equals\(\$snapshot, \$confirmation\)') {
     throw 'PHP-Endpunkt prüft die eingegebene Bestätigung nicht exakt.'
 }
@@ -139,6 +153,10 @@ if ($page -notmatch "\`$snapshot\['owned'\] === '1'") {
 }
 if ($page -match 'window\.prompt' -or $page -notmatch 'requestData\.confirmation = snapshot') {
     throw 'Fremde Snapshots verwenden nicht die einfache Sicherheitsabfrage.'
+}
+if ($page -notmatch 'zsm-protection-button' -or $page -notmatch 'zsm-restore-button' -or
+    $page -notmatch "action: 'restore'" -or $page -notmatch 'confirmation: snapshot') {
+    throw 'Snapshot-Tabelle enthält keinen Schutzschalter oder Wiederherstellungsbutton mit Bestätigung.'
 }
 if ($page -notmatch 'zsm_find_vm_orphans' -or $page -notmatch 'zsm_vm_orphan_hint') {
     throw 'Snapshot-Tabelle kennzeichnet keine verwaisten VM-Snapshots.'
@@ -197,7 +215,7 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.9.2-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.10.0-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }

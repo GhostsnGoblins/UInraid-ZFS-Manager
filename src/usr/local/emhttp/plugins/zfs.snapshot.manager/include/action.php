@@ -21,7 +21,7 @@ if (!zsm_is_enabled()) {
 }
 
 $action = $_POST['action'] ?? '';
-if (!is_string($action) || !in_array($action, ['create', 'delete', 'delete-external'], true)) {
+if (!is_string($action) || !in_array($action, ['create', 'delete', 'delete-external', 'protect', 'unprotect', 'restore'], true)) {
     respond(400, ['ok' => false, 'message' => 'Unbekannte Aktion.']);
 }
 
@@ -49,20 +49,34 @@ if (!is_string($snapshot) || strlen($snapshot) > 320 || !preg_match('/^[A-Za-z0-
     respond(400, ['ok' => false, 'message' => 'Ungültiger Snapshot-Name.']);
 }
 
-if ($action === 'delete') {
+if ($action === 'protect' || $action === 'unprotect') {
+    $arguments = [$action, $snapshot];
+    $successMessage = $action === 'protect'
+        ? 'Snapshot ist vor der automatischen Löschung geschützt.'
+        : 'Der Schutz vor automatischer Löschung wurde aufgehoben.';
+} elseif ($action === 'restore') {
+    $confirmation = $_POST['confirmation'] ?? '';
+    if (!is_string($confirmation) || !hash_equals($snapshot, $confirmation)) {
+        respond(400, ['ok' => false, 'message' => 'Der bestätigte Snapshot-Name stimmt nicht exakt überein.']);
+    }
+    $arguments = ['restore', $snapshot, $confirmation];
+    $successMessage = 'Dataset wurde auf den Snapshot zurückgesetzt.';
+} elseif ($action === 'delete') {
     if (!preg_match('/@(?:uzm_manual_[0-9]{8}T[0-9]{6}Z|uzm_auto_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}Z)$/D', $snapshot)) {
         respond(400, ['ok' => false, 'message' => 'Nur eindeutig benannte Plugin-Snapshots dürfen über diese Aktion gelöscht werden.']);
     }
     $arguments = ['delete', $snapshot];
+    $successMessage = 'Snapshot wurde gelöscht.';
 } else {
     $confirmation = $_POST['confirmation'] ?? '';
     if (!is_string($confirmation) || !hash_equals($snapshot, $confirmation)) {
         respond(400, ['ok' => false, 'message' => 'Der eingegebene Snapshot-Name stimmt nicht exakt überein.']);
     }
     $arguments = ['delete-external', $snapshot, $confirmation];
+    $successMessage = 'Snapshot wurde gelöscht.';
 }
 
-$result = zsm_run($arguments, 30);
+$result = zsm_run($arguments, $action === 'restore' ? 300 : 30);
 if ($result['exitCode'] !== 0) {
     $message = $result['stderr'] !== '' ? $result['stderr'] : 'Der Snapshot konnte nicht gelöscht werden.';
     respond(409, ['ok' => false, 'message' => $message]);
@@ -70,7 +84,7 @@ if ($result['exitCode'] !== 0) {
 
 respond(200, [
     'ok' => true,
-    'message' => 'Snapshot wurde gelöscht.',
+    'message' => $successMessage,
     'snapshot' => $result['stdout'],
 ]);
 
