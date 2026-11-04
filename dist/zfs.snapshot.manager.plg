@@ -2,14 +2,15 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "zfs.snapshot.manager">
 <!ENTITY author "Claudio">
-<!ENTITY version "0.10.0">
+<!ENTITY version "2026.11.04.1">
+<!ENTITY pluginVersion "0.10.0">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager.plg">
-<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-0.10.0-noarch-1.txz">
-<!ENTITY packageSHA256 "6ec0118107b6cd244311a18ca8e78e9fa94c3d8f0900fd9867b4bf90ac122fc5">
+<!ENTITY packageURL "https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main/dist/zfs.snapshot.manager-2026.11.04.1-noarch-1.txz">
+<!ENTITY packageSHA256 "e101c4f164d374ff1efa752e9f93badb978c97405653689bbf4834f85e7f7026">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### 0.10.0
+### 2026.11.04.1 (Plugin 0.10.0)
 
 - Adds a per-snapshot protection marker that excludes protected automatic snapshots from retention cleanup
 - Adds a confirmed dataset restore button with preflight checks for protected newer snapshots, clones, and holds
@@ -46,7 +47,7 @@
 - Restores Unraid cron entries after installation and array start
 ]]></CHANGES>
 
-<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.10.0-noarch-1.txz">
+<FILE Name="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-2026.11.04.1-noarch-1.txz">
 <URL>&packageURL;</URL>
 <SHA256>&packageSHA256;</SHA256>
 </FILE>
@@ -55,8 +56,8 @@
 <INLINE><![CDATA[
 set -euo pipefail
 
-PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-0.10.0-noarch-1.txz"
-EXPECTED_SHA256="6ec0118107b6cd244311a18ca8e78e9fa94c3d8f0900fd9867b4bf90ac122fc5"
+PACKAGE="/boot/config/plugins/zfs.snapshot.manager/packages/zfs.snapshot.manager-2026.11.04.1-noarch-1.txz"
+EXPECTED_SHA256="e101c4f164d374ff1efa752e9f93badb978c97405653689bbf4834f85e7f7026"
 
 if [[ ! -f "$PACKAGE" ]]; then
   echo "Missing local test package: $PACKAGE"
@@ -70,7 +71,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 /sbin/upgradepkg --install-new --reinstall "$PACKAGE"
-find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-0.10.0-noarch-1.txz' -delete
+find /boot/config/plugins/zfs.snapshot.manager/packages -maxdepth 1 -type f -name 'zfs.snapshot.manager-*.txz' ! -name 'zfs.snapshot.manager-2026.11.04.1-noarch-1.txz' -delete
 
 CONFIG_FILE="/boot/config/plugins/zfs.snapshot.manager/zfs.snapshot.manager.cfg"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -108,7 +109,7 @@ if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-s
   echo "Warning: Snapshot shares could not be refreshed. They will be retried after the array starts."
 fi
 
-echo "ZFS Snapshot Manager 0.10.0 installed."
+echo "ZFS Snapshot Manager 0.10.0 (2026.11.04.1) installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>
@@ -117,7 +118,7 @@ echo "Manage snapshots from the top-level Snapshots tab."
 <FILE Run="/bin/bash" Method="remove">
 <INLINE><![CDATA[
 /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/zfs-manager remove-samba-config || echo "Warning: Snapshot shares could not be removed from Samba."
-removepkg zfs.snapshot.manager-0.10.0-noarch-1 2>/dev/null || true
+removepkg zfs.snapshot.manager-2026.11.04.1-noarch-1 2>/dev/null || true
 rm -rf /usr/local/emhttp/plugins/zfs.snapshot.manager
 rm -rf /boot/config/plugins/zfs.snapshot.manager
 rm -f /var/log/zfs.snapshot.manager.log

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.10.0',
+    [string]$Version = '2026.11.04.1',
+    [string]$PluginVersion = '0.10.0',
     [string]$OutputDirectory = 'dist',
     [string]$RepositoryRawBase = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid-ZFS-Manager/main'
 )
@@ -32,8 +33,8 @@ Copy-Item -Path (Join-Path $sourceRoot '*') -Destination $stageRoot -Recurse -Fo
 
 $versionLibrary = Join-Path $stageRoot 'usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
 $versionSource = Get-Content -Raw -LiteralPath $versionLibrary
-if ($versionSource -notmatch [regex]::Escape("const ZSM_VERSION = '$Version';")) {
-    throw "Plugin-Version in lib.php stimmt nicht mit der Build-Version $Version überein."
+if ($versionSource -notmatch [regex]::Escape("const ZSM_VERSION = '$PluginVersion';")) {
+    throw "Plugin-Version in lib.php stimmt nicht mit der Funktionsversion $PluginVersion überein."
 }
 
 $slackInstall = Join-Path $stageRoot 'install'
@@ -73,13 +74,14 @@ $manifest = @"
 <!ENTITY name "$pluginName">
 <!ENTITY author "Claudio">
 <!ENTITY version "$Version">
+<!ENTITY pluginVersion "$PluginVersion">
 <!ENTITY pluginURL "$manifestUrl">
 <!ENTITY packageURL "$packageUrl">
 <!ENTITY packageSHA256 "$sha256">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" launch="Settings/ZFSSnapshotManager" min="6.12.0" icon="fa-history">
 <CHANGES><![CDATA[
-### $Version
+### $Version (Plugin $PluginVersion)
 
 - Adds a per-snapshot protection marker that excludes protected automatic snapshots from retention cleanup
 - Adds a confirmed dataset restore button with preflight checks for protected newer snapshots, clones, and holds
@@ -178,7 +180,7 @@ if ! /usr/bin/php /usr/local/emhttp/plugins/zfs.snapshot.manager/scripts/apply-s
   echo "Warning: Snapshot shares could not be refreshed. They will be retried after the array starts."
 fi
 
-echo "ZFS Snapshot Manager $Version installed."
+echo "ZFS Snapshot Manager $PluginVersion ($Version) installed."
 echo "Configure it under Settings > User Utilities > ZFS Snapshot Manager."
 echo "Manage snapshots from the top-level Snapshots tab."
 ]]></INLINE>

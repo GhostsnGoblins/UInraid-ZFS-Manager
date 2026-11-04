@@ -73,8 +73,10 @@ Im Projektordner:
 
 Die fertigen Testdateien liegen danach in `dist`:
 
-- `zfs.snapshot.manager-0.10.0-noarch-1.txz`
+- `zfs.snapshot.manager-2026.11.04.1-noarch-1.txz`
 - `zfs.snapshot.manager.plg`
+
+Unraid erhält im Manifest die lexikografisch sortierbare Releaseversion `2026.11.04.1`. Die Funktionsversion des Plugins bleibt `0.10.0`. Dieses getrennte Schema ist nötig, weil Unraid Drittanbieter-Pluginversionen beim Updatecheck als Zeichenketten vergleicht.
 
 ## Auf einem Testsystem installieren
 

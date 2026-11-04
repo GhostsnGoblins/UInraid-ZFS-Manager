@@ -2,6 +2,7 @@
 
 ## 0.10.0
 
+- Unraid-Releaseversion `2026.11.04.1` verwenden, damit der lexikografische Updatevergleich die Version zuverlässig als neuer als `0.9.2` erkennt
 - Snapshots über die Tabelle vor der automatischen Aufbewahrungsbereinigung schützen und wieder freigeben
 - Schutzstatus als lokale ZFS-Benutzereigenschaft dauerhaft am Snapshot speichern
 - geschützte automatische Snapshots aus Löschvorschau und Bereinigung ausschließen

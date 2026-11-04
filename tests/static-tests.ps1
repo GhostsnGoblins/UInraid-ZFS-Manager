@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') | Out-Host
 
 $manifestPath = Join-Path $projectRoot 'dist\zfs.snapshot.manager.plg'
-$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-0.10.0-noarch-1.txz'
+$packagePath = Join-Path $projectRoot 'dist\zfs.snapshot.manager-2026.11.04.1-noarch-1.txz'
 $backendPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\scripts\zfs-manager'
 $actionPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\action.php'
 $libraryPath = Join-Path $projectRoot 'src\usr\local\emhttp\plugins\zfs.snapshot.manager\include\lib.php'
@@ -215,12 +215,15 @@ $expectedManifestUrl = 'https://raw.githubusercontent.com/GhostsnGoblins/UInraid
 if ($manifest.PLUGIN.pluginURL -ne $expectedManifestUrl) {
     throw 'Manifest enthält nicht den erwarteten GitHub-Updatekanal.'
 }
-$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-0.10.0-noarch-1.txz' })
+$downloadFile = @($manifest.PLUGIN.FILE | Where-Object { $_.Name -like '*zfs.snapshot.manager-2026.11.04.1-noarch-1.txz' })
 if ($downloadFile.Count -ne 1 -or -not $downloadFile[0].URL -or -not $downloadFile[0].SHA256) {
     throw 'Manifest enthält keinen eindeutig geprüften Paketdownload.'
 }
 $manifestText = Get-Content -Raw -LiteralPath $manifestPath
-if ($manifestText -notmatch '<!ENTITY pluginURL "https://raw\.githubusercontent\.com/' -or
+if ($manifest.PLUGIN.version -ne '2026.11.04.1' -or
+    [string]::CompareOrdinal([string] $manifest.PLUGIN.version, '0.9.2') -le 0 -or
+    $manifestText -notmatch '<!ENTITY pluginVersion "0\.10\.0">' -or
+    $manifestText -notmatch '<!ENTITY pluginURL "https://raw\.githubusercontent\.com/' -or
     $manifestText -notmatch 'pluginURL="&pluginURL;"' -or
     $manifestText -notmatch '<URL>&packageURL;</URL>' -or
     $manifestText -notmatch '<SHA256>&packageSHA256;</SHA256>') {
